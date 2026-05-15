@@ -7,6 +7,11 @@ export default function VerificationCenter() {
   const qc = useQueryClient()
   const [filter, setFilter] = useState('all')
 
+  const { data: categories } = useQuery({
+    queryKey: ['categories'],
+    queryFn: () => apiClient.get('/transactions/categories').then(r => r.data)
+  })
+
   const { data, isLoading } = useQuery({
     queryKey: ['pending'],
     queryFn: () => apiClient.get('/analytics/pending-review').then(r => r.data)
@@ -63,6 +68,7 @@ export default function VerificationCenter() {
           <TransactionCard
             key={tx.id}
             transaction={tx}
+            categories={categories}
             onVerify={(body) => verifyMutation.mutate({ id: tx.id, body })}
           />
         ))}

@@ -12,22 +12,34 @@ export default function Upload() {
       return
     }
     setStatus('uploading')
-    const form = new FormData()
-    form.append('file', file)
+    try {
+      const form = new FormData()
+      form.append('file', file)
 
-    const res = await apiClient.post('/pdf/upload', form, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    })
-    setStatus('processing')
+      const res = await apiClient.post('/pdf/upload', form, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      })
+      setStatus('processing')
 
-    const poll = setInterval(async () => {
-      const s = await apiClient.get(`/pdf/uploads/${res.data.upload_id}`)
-      if (['completed','needs_review','failed'].includes(s.data.status)) {
-        clearInterval(poll)
-        setStatus('done')
-        setTimeout(() => navigate('/verify'), 800)
-      }
-    }, 2000)
+      const poll = setInterval(async () => {
+        try {
+          const s = await apiClient.get(`/pdf/uploads/${res.data.upload_id}`)
+          if (['completed','needs_review','failed'].includes(s.data.status)) {
+            clearInterval(poll)
+            setStatus('done')
+            setTimeout(() => navigate('/verify'), 800)
+          }
+        } catch (e) {
+          clearInterval(poll)
+          setStatus('idle')
+          alert('Durum kontrol edilirken hata oluştu.')
+        }
+      }, 2000)
+    } catch (err) {
+      console.error(err)
+      setStatus('idle')
+      alert('Yükleme sırasında bir hata oluştu. Backend çalışıyor mu?')
+    }
   }, [navigate])
 
   const labels = {

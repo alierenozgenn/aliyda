@@ -25,63 +25,45 @@ async def pdf_reader_node(state: FinanceAgentState) -> FinanceAgentState:
             "extraction_error": None,
         }
     except Exception as e:
+        retry = state.get("retry_count", 0) + 1
         return {
             **state,
             "raw_transactions": [],
             "extraction_error": str(e),
-            "retry_count": state.get("retry_count", 0) + 1,
+            "retry_count": retry,
+            "status": "failed" if retry >= 2 else "processing"
         }
 
 async def validation_node(state: FinanceAgentState) -> FinanceAgentState:
-    valid, invalid = [], []
-
-    for item in state.get("raw_transactions", []):
+    raw = state.get("raw_transactions", [])
+    valid_items = []
+    
+    for item in raw:
         errors = []
-
-        try:
-            datetime.strptime(item.get("date", ""), "%Y-%m-%d")
-        except ValueError:
-            errors.append("invalid_date")
-
-        if not isinstance(item.get("amount"), (int, float)) or item.get("amount") <= 0:
-            errors.append("invalid_amount")
-
-        if item.get("direction") not in VALID_DIRECTIONS:
-            errors.append("invalid_direction")
-
-        if not item.get("description", "").strip():
-            errors.append("empty_description")
-
+        if not item.get("date"): errors.append("Missing date")
+        if not item.get("amount"): errors.append("Missing amount")
+        if item.get("direction") not in ["income", "expense"]: errors.append("Invalid direction")
+        
         confidence = item.get("confidence", 0)
-        if not isinstance(confidence, (int, float)) or not (0 <= confidence <= 1):
-            confidence = 0.5
-            item["confidence"] = confidence
-
+        
         if item.get("estimated_category") not in VALID_CATEGORIES:
             item["estimated_category"] = "Diger"
             item["confidence"] = min(confidence, 0.5)
+        elif item.get("estimated_category") in ["Transfer", "Diger"]:
+            item["confidence"] = min(confidence, 0.75)
 
         if errors:
             item["validation_errors"] = errors
-            invalid.append(item)
+            item["is_verified"] = False
         else:
             item["is_verified"] = confidence >= CONFIDENCE_THRESHOLD
-            valid.append(item)
-
-    return {**state, "valid_transactions": valid, "invalid_transactions": invalid}
+            
+        valid_items.append(item)
+        
+    return {**state, "validated_transactions": valid_items}
 
 async def category_node(state: FinanceAgentState) -> FinanceAgentState:
     sb = get_supabase()
-    user_id = state["user_id"]
-
-    # Ogrenilen kurallari cek
-    rules_res = sb.table("category_rules").select("*").eq("user_id", user_id).execute()
-    rules = {r["keyword"].lower(): r["category_id"] for r in rules_res.data}
-
-    # Kategori adi -> id
-    cats_res = sb.table("categories").select("id,name").execute()
-    cat_name_to_id = {c["name"]: c["id"] for c in cats_res.data}
-
     # Duplicate kontrolu
     existing = sb.table("transactions").select("date,amount,description").eq("user_id", user_id).execute()
     existing_keys = {
@@ -172,7 +154,7 @@ async def analytics_node(state: FinanceAgentState) -> FinanceAgentState:
     return {**state, "financial_summary": summary}
 
 genai.configure(api_key=settings.GEMINI_API_KEY)
-insight_model = genai.GenerativeModel("gemini-2.5-flash")
+insight_model = genai.GenerativeModel("gemini-2.5-flash-lite")
 
 async def insight_node(state: FinanceAgentState) -> FinanceAgentState:
     summary = state.get("financial_summary", {})
@@ -192,5 +174,5 @@ KURALLARI:
 
 Sadece ozet metni yaz, baska hicbir sey ekleme.
 """
-    response = insight_model.generate_content(prompt)
+    response = await insight_model.generate_content_async(prompt)
     return {**state, "insight_text": response.text.strip(), "status": "completed"}

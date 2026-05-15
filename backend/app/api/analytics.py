@@ -43,3 +43,36 @@ async def monthly_trend(user = Depends(get_current_user)):
         {"month": k, **v, "net": round(v["income"] - v["expense"], 2)}
         for k, v in sorted(monthly.items())
     ]
+
+import google.generativeai as genai
+import json
+from app.core.config import settings
+
+genai.configure(api_key=settings.GEMINI_API_KEY)
+insight_model = genai.GenerativeModel("gemini-2.5-flash-lite")
+
+@router.get("/insight")
+async def get_insight(user = Depends(get_current_user)):
+    # Calculate current summary to pass to Gemini
+    summary = await get_summary(month=None, user=user)
+    prompt = f"""
+Sen bir kisisel finans asistanisin.
+Kullanicinin bu ayki finansal ozeti:
+
+{json.dumps(summary, ensure_ascii=False, indent=2)}
+
+KURALLARI:
+- Maksimum 4 cumle yaz
+- Teknik terim kullanma
+- Yatirim, hisse, kripto, doviz onerisi yapma kesinlikle
+- Son cumlede mutlaka su notu ekle: "Bu yatirim tavsiyesi degildir."
+- Turkce yaz
+- Anomalileri varsa bir cumlede belirt
+
+Sadece ozet metni yaz, baska hicbir sey ekleme.
+"""
+    try:
+        response = await insight_model.generate_content_async(prompt)
+        return {"insight": response.text.strip()}
+    except Exception as e:
+        return {"insight": f"Şu an analiz yapılamıyor: {str(e)}"}

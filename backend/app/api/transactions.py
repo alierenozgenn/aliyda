@@ -5,6 +5,12 @@ from app.services.supabase_client import get_supabase
 
 router = APIRouter()
 
+@router.get("/categories")
+async def list_categories():
+    sb = get_supabase()
+    res = sb.table("categories").select("*").execute()
+    return res.data
+
 @router.get("/")
 async def list_transactions(
     date_from:   Optional[str]  = Query(None),

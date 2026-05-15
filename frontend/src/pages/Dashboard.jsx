@@ -22,7 +22,13 @@ export default function Dashboard() {
   const { data: summary } = useQuery({ queryKey: ['summary'], queryFn: () => apiClient.get('/analytics/summary').then(r => r.data) })
   const { data: trend }   = useQuery({ queryKey: ['trend'],   queryFn: () => apiClient.get('/analytics/monthly-trend').then(r => r.data) })
   const { data: pending } = useQuery({ queryKey: ['pending'], queryFn: () => apiClient.get('/analytics/pending-review').then(r => r.data) })
-  const { data: insight } = useQuery({ queryKey: ['insight'], queryFn: () => apiClient.get('/analytics/insight').then(r => r.data) })
+  const { data: insight } = useQuery({ 
+    queryKey: ['insight'], 
+    queryFn: () => apiClient.get('/analytics/insight').then(r => r.data),
+    staleTime: 1000 * 60 * 60, // 1 saat boyunca tekrar istek atmaz
+    refetchOnWindowFocus: false, // Sekme değiştirince tekrar istek atmaz
+    retry: false
+  })
 
   if (!summary) return <div className="p-8 text-center text-gray-400">Yukleniyor...</div>
 
@@ -36,11 +42,10 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <SummaryCard title="Toplam Gelir"   value={fmt(summary.total_income)}   colorClass="text-green-600"/>
-        <SummaryCard title="Toplam Gider"   value={fmt(summary.total_expense)}  colorClass="text-red-600"/>
-        <SummaryCard title="Net Durum"      value={fmt(summary.net_balance)}    colorClass={summary.net_balance >= 0 ? "text-green-600" : "text-red-600"}/>
-        <SummaryCard title="Ay Sonu Tahmin" value={fmt(summary.projected_month_end)} sub="tahmini"/>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <SummaryCard title="Aylık Toplam Gelir"   value={fmt(summary.total_income)}   colorClass="text-green-600"/>
+        <SummaryCard title="Aylık Toplam Gider"   value={fmt(summary.total_expense)}  colorClass="text-red-600"/>
+        <SummaryCard title="Aylık Net Durum"      value={fmt(summary.net_balance)}    colorClass={summary.net_balance >= 0 ? "text-green-600" : "text-red-600"} sub="(Gelir - Gider)"/>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
