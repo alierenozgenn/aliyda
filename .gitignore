@@ -1,0 +1,20 @@
+@(
+# Python
+venv/
+__pycache__/
+*.pyc
+.env
+.pytest_cache/
+
+# Node / React
+node_modules/
+dist/
+build/
+.eslintcache
+
+# Windows / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+)
