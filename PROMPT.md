@@ -213,8 +213,14 @@ Test et ve özet ver
 
 ### "Module not found" hatası alıyorsan
 
+**Mac/Linux:**
 ```bash
 cd backend && source venv/bin/activate && pip install -r requirements.txt
+```
+
+**Windows:**
+```bash
+cd backend && venv\Scripts\activate && pip install -r requirements.txt
 ```
 
 ### LangGraph import hatası
@@ -247,6 +253,12 @@ print('Gemini OK:', r.text[:50])
 
 ### Frontend build hatası
 
+**Mac/Linux:**
 ```bash
 cd frontend && rm -rf node_modules && npm install && npm run build
+```
+
+**Windows:**
+```bash
+cd frontend; Remove-Item -Recurse -Force node_modules; npm install; npm run build
 ```
