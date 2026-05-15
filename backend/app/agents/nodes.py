@@ -4,6 +4,9 @@ from app.services.supabase_client import get_supabase
 from app.services.finance_summary_service import calculate_financial_summary
 from datetime import datetime, date, timedelta
 from collections import defaultdict
+import json
+import google.generativeai as genai
+from app.core.config import settings
 
 CONFIDENCE_THRESHOLD = 0.80
 VALID_DIRECTIONS = {"income", "expense"}
@@ -168,6 +171,26 @@ async def analytics_node(state: FinanceAgentState) -> FinanceAgentState:
     )
     return {**state, "financial_summary": summary}
 
+genai.configure(api_key=settings.GEMINI_API_KEY)
+insight_model = genai.GenerativeModel("gemini-1.5-flash")
+
 async def insight_node(state: FinanceAgentState) -> FinanceAgentState:
-    # TODO: Gun 4 - Gemini ile dogal dil ozeti uret
-    return {**state, "insight_text": "", "status": "completed"}
+    summary = state.get("financial_summary", {})
+    prompt = f"""
+Sen bir kisisel finans asistanisin.
+Kullanicinin bu ayki finansal ozeti:
+
+{json.dumps(summary, ensure_ascii=False, indent=2)}
+
+KURALLARI:
+- Maksimum 4 cumle yaz
+- Teknik terim kullanma
+- Yatirim, hisse, kripto, doviz onerisi yapma kesinlikle
+- Son cumlede mutlaka su notu ekle: "Bu yatirim tavsiyesi degildir."
+- Turkce yaz
+- Anomalileri varsa bir cumlede belirt
+
+Sadece ozet metni yaz, baska hicbir sey ekleme.
+"""
+    response = insight_model.generate_content(prompt)
+    return {**state, "insight_text": response.text.strip(), "status": "completed"}
