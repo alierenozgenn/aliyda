@@ -1,11 +1,8 @@
 from fastapi import FastAPI
 
-app = FastAPI()
+from app.api.router import api_router
+from app.core.config import settings
 
-@app.get("/")
-def read_root():
-    return {"message": "Aliyda Backend Calisiyor!"}
+app = FastAPI(title=settings.PROJECT_NAME)
 
-@app.get("/health")
-def health_check():
-    return {"status": "healthy"} # Backend'in ayakta olup olmadığını kontrol etmek için [cite: 299-300]
+app.include_router(api_router)
