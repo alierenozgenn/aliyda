@@ -1,13 +1,6 @@
 from fastapi import APIRouter
+from app.api.pdf import router as pdf_router
 
 api_router = APIRouter()
 
-
-@api_router.get("/")
-def read_root():
-    return {"message": "Aliyda Backend Calisiyor!"}
-
-
-@api_router.get("/health")
-def health_check():
-    return {"status": "healthy"}  # Backend kontrolü için [cite: 300]
+api_router.include_router(pdf_router, prefix="/pdf", tags=["pdf"])
