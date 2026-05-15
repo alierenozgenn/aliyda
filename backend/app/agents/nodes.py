@@ -172,7 +172,7 @@ async def analytics_node(state: FinanceAgentState) -> FinanceAgentState:
     return {**state, "financial_summary": summary}
 
 genai.configure(api_key=settings.GEMINI_API_KEY)
-insight_model = genai.GenerativeModel("gemini-1.5-flash")
+insight_model = genai.GenerativeModel("gemini-2.5-flash")
 
 async def insight_node(state: FinanceAgentState) -> FinanceAgentState:
     summary = state.get("financial_summary", {})
