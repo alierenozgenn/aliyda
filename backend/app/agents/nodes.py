@@ -1,6 +1,7 @@
 from app.agents.state import FinanceAgentState
 from app.services.gemini_service import extract_transactions_from_pdf
 from app.services.supabase_client import get_supabase
+from app.services.finance_summary_service import calculate_financial_summary
 from datetime import datetime, date, timedelta
 from collections import defaultdict
 
@@ -161,8 +162,11 @@ async def anomaly_node(state: FinanceAgentState) -> FinanceAgentState:
     return {**state, "anomalies": anomalies}
 
 async def analytics_node(state: FinanceAgentState) -> FinanceAgentState:
-    # TODO: Gun 3 - Deterministik finansal hesaplama (LLM kullanma!)
-    return {**state, "financial_summary": {}}
+    summary = calculate_financial_summary(
+        state.get("categorized_transactions", []),
+        state.get("anomalies", [])
+    )
+    return {**state, "financial_summary": summary}
 
 async def insight_node(state: FinanceAgentState) -> FinanceAgentState:
     # TODO: Gun 4 - Gemini ile dogal dil ozeti uret
