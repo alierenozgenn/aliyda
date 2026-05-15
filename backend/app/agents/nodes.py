@@ -1,7 +1,8 @@
 from app.agents.state import FinanceAgentState
 from app.services.gemini_service import extract_transactions_from_pdf
 from app.services.supabase_client import get_supabase
-from datetime import datetime
+from datetime import datetime, date, timedelta
+from collections import defaultdict
 
 CONFIDENCE_THRESHOLD = 0.80
 VALID_DIRECTIONS = {"income", "expense"}
@@ -124,8 +125,40 @@ async def category_node(state: FinanceAgentState) -> FinanceAgentState:
     return {**state, "categorized_transactions": categorized}
 
 async def anomaly_node(state: FinanceAgentState) -> FinanceAgentState:
-    # TODO: Gun 3 - Anormal harcamalari tespit et
-    return {**state, "anomalies": []}
+    sb = get_supabase()
+    anomalies = []
+
+    three_months_ago = (date.today() - timedelta(days=90)).isoformat()
+    history = sb.table("transactions").select(
+        "direction,category_id,amount,categories(name)"
+    ).eq("user_id", state["user_id"]).eq("direction", "expense").gte("date", three_months_ago).execute()
+
+    monthly_totals = defaultdict(lambda: {"total": 0, "count": 0})
+    for t in history.data:
+        cat_name = t.get("categories", {}).get("name", "Diger")
+        monthly_totals[cat_name]["total"] += t["amount"]
+        monthly_totals[cat_name]["count"] += 1
+
+    current_by_cat = defaultdict(float)
+    for item in state.get("categorized_transactions", []):
+        if item["direction"] == "expense":
+            current_by_cat[item.get("estimated_category", "Diger")] += item["amount"]
+
+    for cat, current_total in current_by_cat.items():
+        if cat in monthly_totals:
+            hist = monthly_totals[cat]
+            avg = hist["total"] / max(hist["count"] / 30, 1)
+            if current_total > avg * 1.25 and current_total > 500:
+                pct = round((current_total - avg) / avg * 100, 1)
+                anomalies.append({
+                    "category": cat,
+                    "current": current_total,
+                    "average": round(avg, 2),
+                    "increase_pct": pct,
+                    "message": f"{cat} harcamalariniz gecmis ortalamanin %{pct} uzerinde."
+                })
+
+    return {**state, "anomalies": anomalies}
 
 async def analytics_node(state: FinanceAgentState) -> FinanceAgentState:
     # TODO: Gun 3 - Deterministik finansal hesaplama (LLM kullanma!)
