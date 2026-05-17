@@ -1,89 +1,135 @@
-import { useQuery } from '@tanstack/react-query'
-import { apiClient } from '../services/apiClient'
-import { HealthScoreGauge } from '../components/HealthScoreGauge'
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
-         LineChart, Line, XAxis, YAxis, CartesianGrid } from 'recharts'
-import { Link } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { useAuth } from '../context/AuthContext'
+import { getDashboard, generateInsight } from '../services/api'
+import { TrendingUp, TrendingDown, Wallet, Sparkles } from 'lucide-react'
 
-const COLORS = ['#1A56A0','#16a34a','#d97706','#dc2626','#7c3aed','#0891b2']
-const fmt = (n) => `${n?.toLocaleString('tr-TR') ?? '-'} TL`
+const MONTHS = [
+  '2026-05', '2026-04', '2026-03', '2026-02', '2026-01',
+  '2025-12', '2025-11', '2025-10',
+]
 
-function SummaryCard({ title, value, sub, colorClass = 'text-gray-800' }) {
+function StatCard({ title, value, icon: Icon, color }) {
   return (
-    <div className="bg-white rounded-2xl p-5 shadow-sm border">
-      <p className="text-sm text-gray-500 mb-1">{title}</p>
-      <p className={`text-2xl font-bold ${colorClass}`}>{value}</p>
-      {sub && <p className="text-xs text-gray-400 mt-1">{sub}</p>}
+    <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-gray-400 text-sm">{title}</span>
+        <div className={`p-2 rounded-lg ${color}`}>
+          <Icon size={16} />
+        </div>
+      </div>
+      <div className="text-2xl font-bold text-white">
+        {value != null
+          ? `₺${Number(value).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`
+          : '—'}
+      </div>
     </div>
   )
 }
 
 export default function Dashboard() {
-  const { data: summary } = useQuery({ queryKey: ['summary'], queryFn: () => apiClient.get('/analytics/summary').then(r => r.data) })
-  const { data: trend }   = useQuery({ queryKey: ['trend'],   queryFn: () => apiClient.get('/analytics/monthly-trend').then(r => r.data) })
-  const { data: pending } = useQuery({ queryKey: ['pending'], queryFn: () => apiClient.get('/analytics/pending-review').then(r => r.data) })
-  const { data: insight } = useQuery({ 
-    queryKey: ['insight'], 
-    queryFn: () => apiClient.get('/analytics/insight').then(r => r.data),
-    staleTime: 1000 * 60 * 60, // 1 saat boyunca tekrar istek atmaz
-    refetchOnWindowFocus: false, // Sekme değiştirince tekrar istek atmaz
-    retry: false
-  })
+  const { user } = useAuth()
+  const [month, setMonth] = useState('2026-05')
+  const [dashboard, setDashboard] = useState(null)
+  const [insight, setInsight] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [insightLoading, setInsightLoading] = useState(false)
+  const [error, setError] = useState('')
 
-  if (!summary) return <div className="p-8 text-center text-gray-400">Yukleniyor...</div>
+  useEffect(() => {
+    setLoading(true)
+    setError('')
+    setDashboard(null)
+    getDashboard(month)
+      .then(res => setDashboard(res.data))
+      .catch(() => setError('Dashboard yüklenemedi.'))
+      .finally(() => setLoading(false))
+  }, [month])
+
+  const handleGenerateInsight = async () => {
+    setInsightLoading(true)
+    try {
+      const res = await generateInsight(month)
+      setInsight(res.data)
+    } catch {
+      setInsight(null)
+    } finally {
+      setInsightLoading(false)
+    }
+  }
 
   return (
-    <div className="max-w-6xl mx-auto p-6 space-y-6">
+    <div className="p-8">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Dashboard</h1>
+          <p className="text-gray-400 text-sm mt-1">Doğrulanmış verilerinizin özeti</p>
+        </div>
+        <select
+          value={month}
+          onChange={e => setMonth(e.target.value)}
+          className="bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-4 py-2"
+        >
+          {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
+        </select>
+      </div>
 
-      {pending?.count > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex justify-between items-center">
-          <span className="text-amber-800">{pending.count} islem onayini bekliyor.</span>
-          <Link to="/verify" className="text-amber-700 font-medium hover:underline">Incele</Link>
+      {loading && <p className="text-gray-400">Yükleniyor...</p>}
+      {error && <p className="text-red-400">{error}</p>}
+
+      {!loading && !dashboard && !error && (
+        <div className="bg-gray-900 border border-dashed border-gray-700 rounded-xl p-10 text-center">
+          <p className="text-gray-400">Bu ay için henüz veri yok.</p>
+          <p className="text-gray-500 text-sm mt-1">Manuel işlem ekleyin veya PDF yükleyin.</p>
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <SummaryCard title="Aylık Toplam Gelir"   value={fmt(summary.total_income)}   colorClass="text-green-600"/>
-        <SummaryCard title="Aylık Toplam Gider"   value={fmt(summary.total_expense)}  colorClass="text-red-600"/>
-        <SummaryCard title="Aylık Net Durum"      value={fmt(summary.net_balance)}    colorClass={summary.net_balance >= 0 ? "text-green-600" : "text-red-600"} sub="(Gelir - Gider)"/>
-      </div>
+      {dashboard && (
+        <>
+          {/* Stat Cards */}
+          <div className="grid grid-cols-3 gap-4 mb-8">
+            <StatCard title="Toplam Gelir" value={dashboard.total_income} icon={TrendingUp} color="bg-green-500/20 text-green-400" />
+            <StatCard title="Toplam Gider" value={dashboard.total_expense} icon={TrendingDown} color="bg-red-500/20 text-red-400" />
+            <StatCard title="Net Bakiye" value={dashboard.net_balance} icon={Wallet} color="bg-violet-500/20 text-violet-400" />
+          </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <HealthScoreGauge score={summary.health_score}/>
-        <div className="md:col-span-2 bg-white rounded-2xl p-5 shadow-sm border">
-          <h3 className="text-sm font-medium text-gray-500 mb-3">Harcama Dagilimi</h3>
-          <ResponsiveContainer width="100%" height={180}>
-            <PieChart>
-              <Pie data={summary.categories} dataKey="amount" nameKey="name" cx="50%" cy="50%" outerRadius={70}>
-                {summary.categories.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]}/>)}
-              </Pie>
-              <Tooltip formatter={(v) => fmt(v)}/>
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
+          {/* Top Categories */}
+          {dashboard.top_categories && dashboard.top_categories.length > 0 && (
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-5">
+              <h2 className="text-white font-semibold mb-4">En Yüksek Kategoriler</h2>
+              <div className="space-y-2">
+                {dashboard.top_categories.slice(0, 5).map((cat, i) => (
+                  <div key={i} className="flex items-center justify-between text-sm">
+                    <span className="text-gray-300">{cat.category || 'Diğer'}</span>
+                    <span className="text-gray-400">₺{Number(cat.total).toLocaleString('tr-TR')}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
-      {insight?.insight && (
-        <div className="bg-blue-50 border-l-4 border-blue-500 rounded-xl p-5">
-          <p className="text-xs font-medium text-blue-500 mb-2">Aliyda'nin Analizi</p>
-          <p className="text-gray-700 leading-relaxed">{insight.insight}</p>
-        </div>
-      )}
-
-      {trend && trend.length > 0 && (
-        <div className="bg-white rounded-2xl p-5 shadow-sm border">
-          <h3 className="text-sm font-medium text-gray-500 mb-3">Aylik Gelir / Gider Trendi</h3>
-          <ResponsiveContainer width="100%" height={200}>
-            <LineChart data={trend}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9"/>
-              <XAxis dataKey="month" tick={{ fontSize: 12 }}/>
-              <YAxis tick={{ fontSize: 12 }}/>
-              <Tooltip formatter={(v) => fmt(v)}/>
-              <Line type="monotone" dataKey="income"  stroke="#16a34a" strokeWidth={2} dot={false}/>
-              <Line type="monotone" dataKey="expense" stroke="#dc2626" strokeWidth={2} dot={false}/>
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+          {/* AI Insight */}
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-white font-semibold flex items-center gap-2">
+                <Sparkles size={16} className="text-violet-400" />
+                AI Yorumu
+              </h2>
+              <button
+                onClick={handleGenerateInsight}
+                disabled={insightLoading}
+                className="text-xs text-violet-400 hover:text-violet-300 disabled:opacity-50"
+              >
+                {insightLoading ? 'Üretiliyor...' : 'Yorum üret'}
+              </button>
+            </div>
+            {insight ? (
+              <p className="text-gray-300 text-sm leading-relaxed">{insight.insight_text}</p>
+            ) : (
+              <p className="text-gray-500 text-sm">"Yorum üret" butonuna tıklayarak AI yorumu alabilirsiniz.</p>
+            )}
+          </div>
+        </>
       )}
     </div>
   )

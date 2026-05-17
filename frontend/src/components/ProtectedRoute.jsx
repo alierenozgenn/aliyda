@@ -3,7 +3,18 @@ import { useAuth } from '../context/AuthContext'
 
 export function ProtectedRoute({ children }) {
   const { user, loading } = useAuth()
-  if (loading) return <div className="flex items-center justify-center h-screen">Yukleniyor...</div>
-  if (!user)   return <Navigate to="/login" replace />
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
+        <div className="text-white text-lg">Yükleniyor...</div>
+      </div>
+    )
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />
+  }
+
   return children
 }

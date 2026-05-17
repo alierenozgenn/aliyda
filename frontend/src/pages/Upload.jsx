@@ -1,71 +1,346 @@
-import { useState, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { apiClient } from '../services/apiClient'
+import { useState, useEffect } from 'react'
+import { getStatements, uploadStatement, getDrafts, approveDraft, rejectDraft, getAccounts, createAccount } from '../services/api'
+import { Upload, CheckCircle, XCircle, Clock, Plus, X } from 'lucide-react'
 
-export default function Upload() {
-  const [status, setStatus] = useState('idle')
-  const navigate = useNavigate()
+const MONTHS = ['2026-05', '2026-04', '2026-03', '2026-02']
 
-  const handleFile = useCallback(async (file) => {
-    if (!file?.name.endsWith('.pdf')) {
-      alert('Lutfen PDF formatinda banka ekstresi yukleyin.')
-      return
-    }
-    setStatus('uploading')
+const ACCOUNT_TYPES = [
+  { value: 'bank', label: 'Banka Hesabı' },
+  { value: 'credit_card', label: 'Kredi Kartı' },
+  { value: 'cash', label: 'Nakit' },
+  { value: 'wallet', label: 'Dijital Cüzdan (Papara vb.)' },
+  { value: 'manual', label: 'Manuel Giriş Hesabı' },
+  { value: 'other', label: 'Diğer' },
+]
+
+const STATUS_COLORS = {
+  pending_review: 'text-yellow-400',
+  approved: 'text-green-400',
+  failed: 'text-red-400',
+  extracting: 'text-blue-400',
+  uploaded: 'text-gray-400',
+}
+
+function CreateAccountModal({ onClose, onCreated }) {
+  const [form, setForm] = useState({ name: '', account_type: 'bank', institution_name: '', currency: 'TRY' })
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setLoading(true)
+    setError('')
     try {
-      const form = new FormData()
-      form.append('file', file)
-
-      const res = await apiClient.post('/pdf/upload', form, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+      const res = await createAccount({
+        name: form.name,
+        account_type: form.account_type,
+        institution_name: form.institution_name || null,
+        currency: form.currency,
       })
-      setStatus('processing')
-
-      const poll = setInterval(async () => {
-        try {
-          const s = await apiClient.get(`/pdf/uploads/${res.data.upload_id}`)
-          if (['completed','needs_review','failed'].includes(s.data.status)) {
-            clearInterval(poll)
-            setStatus('done')
-            setTimeout(() => navigate('/verify'), 800)
-          }
-        } catch (e) {
-          clearInterval(poll)
-          setStatus('idle')
-          alert('Durum kontrol edilirken hata oluştu.')
-        }
-      }, 2000)
+      if (res.success) {
+        onCreated(res.data)
+        onClose()
+      } else {
+        setError(res.error?.message || 'Bir hata oluştu.')
+      }
     } catch (err) {
-      console.error(err)
-      setStatus('idle')
-      alert('Yükleme sırasında bir hata oluştu. Backend çalışıyor mu?')
+      setError(err.response?.data?.error?.message || 'Hesap oluşturulamadı.')
+    } finally {
+      setLoading(false)
     }
-  }, [navigate])
-
-  const labels = {
-    idle:       'PDF\'i surukle birak veya tikla',
-    uploading:  'Yukleniyor...',
-    processing: 'Aliyda analiz ediyor...',
-    done:       'Tamamlandi! Yonlendiriliyor...',
   }
 
   return (
-    <div className="max-w-xl mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-2">Ekstreni Yukle</h1>
-      <p className="text-gray-500 mb-6">PDF formatinda banka ekstreni yukle, Aliyda analiz etsin.</p>
-      <div
-        className="border-2 border-dashed border-blue-300 rounded-2xl p-16 text-center cursor-pointer hover:bg-blue-50 transition-colors"
-        onDrop={(e) => { e.preventDefault(); handleFile(e.dataTransfer.files[0]) }}
-        onDragOver={(e) => e.preventDefault()}
-        onClick={() => document.getElementById('fi').click()}
-      >
-        <p className={`text-lg ${status !== 'idle' ? 'text-blue-500 animate-pulse' : 'text-gray-400'}`}>
-          {labels[status]}
-        </p>
-        <input id="fi" type="file" accept=".pdf" className="hidden"
-          onChange={(e) => handleFile(e.target.files[0])}/>
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+      <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-md">
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-white font-semibold text-lg">Yeni Hesap Ekle</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-white"><X size={20} /></button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Hesap Adı *</label>
+            <input
+              type="text"
+              value={form.name}
+              onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+              required
+              placeholder="Ziraat Maaş, Enpara Kredi Kartı..."
+              className="w-full bg-gray-800 border border-gray-700 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Hesap Türü *</label>
+            <select
+              value={form.account_type}
+              onChange={e => setForm(f => ({ ...f, account_type: e.target.value }))}
+              className="w-full bg-gray-800 border border-gray-700 text-white rounded-lg px-3 py-2 text-sm"
+            >
+              {ACCOUNT_TYPES.map(t => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Banka / Kurum Adı (opsiyonel)</label>
+            <input
+              type="text"
+              value={form.institution_name}
+              onChange={e => setForm(f => ({ ...f, institution_name: e.target.value }))}
+              placeholder="Ziraat Bankası, Garanti..."
+              className="w-full bg-gray-800 border border-gray-700 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-violet-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Para Birimi</label>
+            <select
+              value={form.currency}
+              onChange={e => setForm(f => ({ ...f, currency: e.target.value }))}
+              className="w-full bg-gray-800 border border-gray-700 text-white rounded-lg px-3 py-2 text-sm"
+            >
+              <option value="TRY">₺ TRY</option>
+              <option value="USD">$ USD</option>
+              <option value="EUR">€ EUR</option>
+            </select>
+          </div>
+
+          {error && <p className="text-red-400 text-sm">{error}</p>}
+
+          <div className="flex gap-3 pt-2">
+            <button type="button" onClick={onClose} className="flex-1 bg-gray-800 text-gray-300 py-2 rounded-lg text-sm hover:bg-gray-700">
+              İptal
+            </button>
+            <button
+              type="submit"
+              disabled={loading || !form.name}
+              className="flex-1 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white py-2 rounded-lg text-sm font-medium transition-colors"
+            >
+              {loading ? 'Oluşturuluyor...' : 'Hesap Oluştur'}
+            </button>
+          </div>
+        </form>
       </div>
-      <p className="text-xs text-gray-400 text-center mt-4">Maksimum 10MB - Yalnizca PDF</p>
+    </div>
+  )
+}
+
+export default function UploadPage() {
+  const [month, setMonth] = useState('2026-05')
+  const [accounts, setAccounts] = useState([])
+  const [accountId, setAccountId] = useState('')
+  const [file, setFile] = useState(null)
+  const [statements, setStatements] = useState([])
+  const [drafts, setDrafts] = useState([])
+  const [selectedStatement, setSelectedStatement] = useState(null)
+  const [uploading, setUploading] = useState(false)
+  const [message, setMessage] = useState('')
+  const [showCreateAccount, setShowCreateAccount] = useState(false)
+
+  const loadAccounts = () => {
+    getAccounts().then(res => {
+      const list = res.data || []
+      setAccounts(list)
+      if (list.length > 0 && !accountId) setAccountId(list[0].id)
+    }).catch(() => {})
+  }
+
+  useEffect(() => {
+    loadAccounts()
+    loadStatements()
+  }, [month])
+
+  const loadStatements = () => {
+    getStatements(month).then(res => setStatements(res.data || [])).catch(() => {})
+  }
+
+  const handleUpload = async (e) => {
+    e.preventDefault()
+    if (!file || !accountId) return
+    setUploading(true)
+    setMessage('')
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('month', month)
+    formData.append('account_id', accountId)
+    try {
+      const res = await uploadStatement(formData)
+      setMessage(`✅ PDF işlendi. ${res.data?.draft_count || 0} işlem onay bekliyor.`)
+      setFile(null)
+      loadStatements()
+    } catch (err) {
+      const msg = err.response?.data?.error?.message || 'Yükleme başarısız.'
+      setMessage(`❌ ${msg}`)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const loadDrafts = async (stmt) => {
+    setSelectedStatement(stmt)
+    const res = await getDrafts(stmt.id)
+    setDrafts(res.data || [])
+  }
+
+  const handleApprove = async (draftId) => {
+    await approveDraft(draftId)
+    setDrafts(prev => prev.filter(d => d.id !== draftId))
+  }
+
+  const handleReject = async (draftId) => {
+    await rejectDraft(draftId, 'Kullanıcı tarafından reddedildi.')
+    setDrafts(prev => prev.filter(d => d.id !== draftId))
+  }
+
+  return (
+    <div className="p-8">
+      {showCreateAccount && (
+        <CreateAccountModal
+          onClose={() => setShowCreateAccount(false)}
+          onCreated={(account) => {
+            loadAccounts()
+            setAccountId(account.id)
+          }}
+        />
+      )}
+
+      <h1 className="text-2xl font-bold text-white mb-6">PDF Yükle</h1>
+
+      {/* Upload Form */}
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-8">
+        <form onSubmit={handleUpload} className="space-y-4">
+          <div className="flex gap-4">
+            <div className="flex-1">
+              <label className="block text-sm text-gray-400 mb-1">Ay</label>
+              <select
+                value={month}
+                onChange={e => setMonth(e.target.value)}
+                className="w-full bg-gray-800 border border-gray-700 text-white rounded-lg px-3 py-2 text-sm"
+              >
+                {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+            <div className="flex-1">
+              <label className="block text-sm text-gray-400 mb-1">Hesap</label>
+              <div className="flex gap-2">
+                <select
+                  value={accountId}
+                  onChange={e => setAccountId(e.target.value)}
+                  className="flex-1 bg-gray-800 border border-gray-700 text-white rounded-lg px-3 py-2 text-sm"
+                >
+                  {accounts.length === 0
+                    ? <option value="">— Hesap yok —</option>
+                    : accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)
+                  }
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setShowCreateAccount(true)}
+                  className="flex items-center gap-1 bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded-lg text-sm transition-colors"
+                  title="Yeni hesap ekle"
+                >
+                  <Plus size={16} />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">PDF Dosyası</label>
+            <input
+              type="file"
+              accept=".pdf"
+              onChange={e => setFile(e.target.files[0])}
+              className="w-full bg-gray-800 border border-gray-700 text-gray-300 rounded-lg px-3 py-2 text-sm file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:bg-violet-600 file:text-white"
+            />
+          </div>
+
+          {message && <p className="text-sm text-gray-300">{message}</p>}
+
+          <button
+            type="submit"
+            disabled={uploading || !file || !accountId}
+            className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white px-5 py-2 rounded-lg text-sm font-medium transition-colors"
+          >
+            <Upload size={16} />
+            {uploading ? 'Yükleniyor ve işleniyor...' : 'Yükle ve İşle'}
+          </button>
+
+          {accounts.length === 0 && (
+            <p className="text-yellow-500 text-xs">
+              ⚠ PDF yüklemek için önce "+" butonuna tıklayarak bir hesap oluşturun.
+            </p>
+          )}
+        </form>
+      </div>
+
+      {/* Statement List */}
+      {statements.length > 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6">
+          <h2 className="text-white font-semibold mb-4">Bu Aydaki PDF'ler</h2>
+          <div className="space-y-2">
+            {statements.map(stmt => (
+              <div key={stmt.id} className="flex items-center justify-between text-sm">
+                <div className="flex items-center gap-3">
+                  <Clock size={14} className={STATUS_COLORS[stmt.status] || 'text-gray-400'} />
+                  <span className="text-gray-300">{stmt.file_name || 'PDF'}</span>
+                  <span className={`text-xs ${STATUS_COLORS[stmt.status] || 'text-gray-500'}`}>
+                    {stmt.status}
+                  </span>
+                </div>
+                {stmt.status === 'pending_review' && (
+                  <button
+                    onClick={() => loadDrafts(stmt)}
+                    className="text-xs text-violet-400 hover:text-violet-300"
+                  >
+                    İşlemleri Onayla →
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Draft Review */}
+      {selectedStatement && (
+        <div className="bg-gray-900 border border-yellow-500/30 rounded-xl p-5">
+          <h2 className="text-white font-semibold mb-1">İşlem Onayı</h2>
+          <p className="text-gray-500 text-xs mb-4">{drafts.length} işlem onay bekliyor. Onayladıklarınız dashboard'a yansır.</p>
+          {drafts.length === 0 ? (
+            <p className="text-green-400 text-sm">✅ Tüm işlemler tamamlandı.</p>
+          ) : (
+            <div className="space-y-2">
+              {drafts.map(draft => (
+                <div key={draft.id} className="flex items-center justify-between bg-gray-800 rounded-lg px-4 py-3 text-sm">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-white truncate">{draft.description}</div>
+                    <div className="text-gray-400 text-xs mt-1">
+                      {draft.transaction_date} · {draft.category || 'Kategori yok'}
+                      {draft.confidence_score && (
+                        <span className="ml-2 text-gray-500">
+                          %{Math.round(draft.confidence_score * 100)} güven
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 ml-4 shrink-0">
+                    <span className={`font-semibold ${draft.direction === 'income' ? 'text-green-400' : 'text-red-400'}`}>
+                      {draft.direction === 'income' ? '+' : '-'}₺{Number(draft.amount).toLocaleString('tr-TR')}
+                    </span>
+                    <button onClick={() => handleApprove(draft.id)} title="Onayla" className="text-green-400 hover:text-green-300 transition-colors">
+                      <CheckCircle size={22} />
+                    </button>
+                    <button onClick={() => handleReject(draft.id)} title="Reddet" className="text-red-400 hover:text-red-300 transition-colors">
+                      <XCircle size={22} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

@@ -1,13 +1,25 @@
 from fastapi import APIRouter
-from app.api.pdf import router as pdf_router
-from app.api.transactions import router as transactions_router
-from app.api.analytics import router as analytics_router
-from app.api.goals import router as goals_router
-
+from app.api import accounts, transactions, dashboard, statements, drafts, chat, insights
 
 api_router = APIRouter()
 
-api_router.include_router(pdf_router, prefix="/pdf", tags=["pdf"])
-api_router.include_router(transactions_router, prefix="/transactions", tags=["transactions"])
-api_router.include_router(analytics_router, prefix="/analytics", tags=["analytics"])
-api_router.include_router(goals_router, prefix="/goals", tags=["goals"])
+# -- Accounts --
+api_router.include_router(accounts.router, prefix="/accounts", tags=["Accounts"])
+
+# -- Statements (PDF upload + status) --
+api_router.include_router(statements.router, prefix="/statements", tags=["Statements"])
+
+# -- Drafts (approve/reject) --
+api_router.include_router(drafts.router, prefix="/drafts", tags=["Drafts"])
+
+# -- Transactions (manual + list + CRUD) --
+api_router.include_router(transactions.router, prefix="/transactions", tags=["Transactions"])
+
+# -- Dashboard & Monthly Profile --
+api_router.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboard"])
+
+# -- Insights (AI-generated, DB-based) --
+api_router.include_router(insights.router, prefix="/insights", tags=["Insights"])
+
+# -- Chat --
+api_router.include_router(chat.router, prefix="/chat", tags=["Chat"])

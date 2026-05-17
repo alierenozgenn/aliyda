@@ -29,5 +29,3 @@ Temel mimari kurallar:
 6. İş bitince hangi dosyaları değiştirdiğini, nasıl test edileceğini ve bir sonraki önerilen adımı yaz.
 
 Şu an ROADMAP.md üzerinde kaldığımız adım:
-
-[Buraya adım numarasını ve yapılacak işi yaz.]

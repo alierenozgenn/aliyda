@@ -1,47 +1,178 @@
-import google.generativeai as genai
-import json
 from app.core.config import settings
+from google import genai
+from google.genai import types
+from typing import List, Dict, Any
+import json
 
-genai.configure(api_key=settings.GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-2.5-flash-lite")
+client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
-EXTRACTION_PROMPT = """
-Sen bir banka ekstresi analiz uzmanısın. Görevin PDF içindeki finansal işlemleri (gelir/gider) bulup JSON olarak çıkarmaktır.
+PROMPT_VERSION = "v2.0"
 
-KURALLAR:
-1. Tarihleri kesinlikle "YYYY-MM-DD" formatına çevir (Örn: 15.05.2026 -> 2026-05-15).
-2. Yalnızca "income" (gelir) veya "expense" (gider) olarak sınıflandır.
-3. Her işlem için en uygun Kategoriyi seç. Emin olmadıklarına "Diger" de. EFT/Havale/FAST gibi gönderimlere "Transfer" de.
-4. "description" alanına işlemin açıklamasını yaz, ancak gereksiz uzun işlem kodlarını temizle, kime/nereye gittiği net kalsın.
-5. "raw_text" alanına PDF'te okuduğun orijinal satırı BİREBİR yaz.
-6. SADECE JSON çıktısı ver, başka hiçbir kelime (```json vb.) kullanma.
+PDF_EXTRACTION_PROMPT = """
+Sen bir banka ekstresi analiz yapay zekasısın. Sana verilen PDF banka ekstresi belgesini incele.
 
-Kategoriler: Market, Kira, Ulasim, Yemek, Fatura, Egitim, Saglik, Eglence, Abonelik, Giyim, Transfer, Maas, Freelance, Diger
+Görevin SADECE veri çıkarmaktır. Yorum yapma, özet yazma, hesaplama yapma.
 
-ÇIKTI FORMATI:
+Aşağıdaki kurallara kesinlikle uy:
+1. Tüm işlemleri JSON array içinde döndür.
+2. Yanıtın SADECE JSON olsun. Başına veya sonuna hiçbir şey ekleme (markdown, açıklama yok).
+3. "direction" alanı yalnızca şu değerlerden biri olabilir: "income", "expense", "transfer"
+4. Para birimi bilinmiyorsa "TRY" kullan.
+5. Tarih formatı: "YYYY-MM-DD"
+6. Saat formatı: "HH:MM" (bilinmiyorsa null)
+7. Tutar her zaman pozitif sayı olmalı. Yönü "direction" belirler.
+8. Gemini olarak hiçbir hesaplama yapma. Sadece PDF'de yazan rakamları yaz.
+9. Güven skoru (confidence): 0.0-1.0 arasında, eğer tarih/tutar belirsizse düşük ver.
+
+Döndürülecek format:
 {
+  "statement_month": "YYYY-MM",
+  "income_detected": true,
   "transactions": [
     {
-      "date": "2026-05-15",
-      "description": "Temizlenmis Aciklama",
-      "amount": 123.45,
+      "transaction_date": "YYYY-MM-DD",
+      "transaction_time": "HH:MM",
+      "description": "Kısa anlaşılır açıklama",
+      "original_description": "PDF'deki orijinal metin olduğu gibi",
+      "amount": 250.00,
+      "currency": "TRY",
       "direction": "expense",
-      "estimated_category": "Market",
+      "category": "Market",
+      "subcategory": null,
+      "counterparty": "Migros",
       "confidence": 0.95,
-      "raw_text": "15.05.2026 A101 MARKET 123.45 TL islem no:123"
+      "raw_text": "PDF'deki o satır tam olarak"
     }
-  ]
+  ],
+  "warnings": []
 }
+
+Kategori önerileri (gerekirse kullan):
+- Market, Restoran/Kafe, Ulaşım, Faturalar, Eğlence, Sağlık, Giyim, Eğitim, Kira, Maaş, Diğer Gelir, Transfer, Diğer
 """
 
-async def extract_transactions_from_pdf(pdf_bytes: bytes) -> dict:
-    pdf_part = {"mime_type": "application/pdf", "data": pdf_bytes}
-    response = await model.generate_content_async([EXTRACTION_PROMPT, pdf_part])
-    text = response.text.strip()
-    if text.startswith("```"):
-        text = "\n".join(text.split("\n")[1:])
-    if text.endswith("```"):
-        text = "\n".join(text.split("\n")[:-1])
-    if text.startswith("json\n"):
-        text = text[5:]
-    return json.loads(text.strip())
+INSIGHT_PROMPT_TEMPLATE = """
+Sen Aliyda adlı kişisel bütçe asistanısın. Kullanıcının {month} ayı finansal özeti aşağıda verilmiştir.
+
+Bu özete bakarak kullanıcıya 3-5 cümlelik, samimi, faydalı ve özgün bir yorum yaz.
+- Türkçe yaz.
+- Gerçek rakamları kullan (uydurma).
+- Olumlu bir dil kullan ama gerçekçi ol.
+- En çok harcanan kategoriyi belirt.
+- Net bakiye pozitifse tebrik et, negatifse nazikçe uyar.
+- Somut bir tasarruf önerisi ver.
+
+Finansal özet:
+{data}
+"""
+
+CHAT_SYSTEM_PROMPT = """
+Sen Aliyda, bir kişisel bütçe ve finans asistanısın.
+
+ÖNEMLİ KURALLAR:
+1. SADECE sana verilen doğrulanmış finansal veriye dayan. Veri yoksa bunu açıkça söyle.
+2. Asla kendi başına hesaplama yapma veya tahmin üretme.
+3. Finansal yatırım tavsiyesi verme.
+4. Veride olmayan işlem veya tutar söyleme.
+5. Cevaplarını kısa, net ve pratik tut.
+6. Türkçe yaz, samimi bir dil kullan.
+
+Eğer sana sorulan şeyin cevabı veride yoksa: "Bu konuda elimde yeterli veri yok, işlem eklemeyi veya PDF yüklemeyi deneyin." de.
+"""
+
+
+class GeminiService:
+    def __init__(self):
+        self.extraction_model = settings.GEMINI_MODEL_EXTRACTION
+        self.chat_model = settings.GEMINI_MODEL_CHAT
+
+    def extract_transactions_from_pdf(self, file_path: str) -> Dict[str, Any]:
+        """
+        PDF dosyasından işlemleri JSON olarak çıkarır.
+        Roadmap kuralı: 1 PDF = 1 Gemini isteği.
+        Gemini hiçbir hesaplama yapmaz, sadece veri çıkarır.
+        """
+        with open(file_path, "rb") as f:
+            pdf_bytes = f.read()
+
+        response = client.models.generate_content(
+            model=self.extraction_model,
+            contents=[
+                types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
+                types.Part.from_text(text=PDF_EXTRACTION_PROMPT)
+            ],
+            config=types.GenerateContentConfig(
+                temperature=0.1,  # Low temperature for factual extraction
+                response_mime_type="application/json",
+            )
+        )
+
+        text = response.text.strip()
+        # Defensive cleanup in case model wraps in markdown
+        if text.startswith("```json"):
+            text = text[7:]
+        if text.startswith("```"):
+            text = text[3:]
+        if text.endswith("```"):
+            text = text[:-3]
+
+        try:
+            result = json.loads(text.strip())
+            # Basic validation
+            if "transactions" not in result:
+                result["transactions"] = []
+            if "income_detected" not in result:
+                result["income_detected"] = any(
+                    t.get("direction") == "income" for t in result["transactions"]
+                )
+            return result
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                f"Gemini geçerli JSON döndürmedi: {str(e)}\n"
+                f"Ham çıktı (ilk 500 karakter): {response.text[:500]}"
+            )
+
+    def generate_monthly_insight(self, dashboard_data: Dict[str, Any]) -> str:
+        """
+        Aylık özet verisine göre doğal dil yorumu üretir.
+        Kaynak: Supabase'deki deterministik hesaplanmış veriler.
+        Gemini hesaplama yapmaz, sadece yorumlar.
+        """
+        month = dashboard_data.get("month", "")
+        data_str = json.dumps(dashboard_data, indent=2, ensure_ascii=False)
+
+        prompt = INSIGHT_PROMPT_TEMPLATE.format(month=month, data=data_str)
+
+        response = client.models.generate_content(
+            model=self.chat_model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.7,
+            )
+        )
+        return response.text.strip()
+
+    def answer_chat_question(self, question: str, context: Dict[str, Any]) -> str:
+        """
+        Kullanıcının sorusunu YALNIZCA Supabase'den gelen doğrulanmış bağlam verisine
+        dayanarak yanıtlar. Gemini asla kendi başına finansal hesap yapmaz.
+        """
+        context_str = json.dumps(context, indent=2, ensure_ascii=False)
+
+        full_prompt = f"""{CHAT_SYSTEM_PROMPT}
+
+Kullanıcının bu ayki doğrulanmış finansal verisi:
+{context_str}
+
+Kullanıcı sorusu: {question}
+
+Cevabın:"""
+
+        response = client.models.generate_content(
+            model=self.chat_model,
+            contents=full_prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.5,
+            )
+        )
+        return response.text.strip()

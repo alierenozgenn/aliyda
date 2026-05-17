@@ -1,8 +1,12 @@
+# Environment Variables
+.env
+.env.local
+
 # Python
 venv/
+.venv/
 __pycache__/
 *.pyc
-.env
 .pytest_cache/
 
 # Node / React
@@ -10,6 +14,12 @@ node_modules/
 dist/
 build/
 .eslintcache
+
+# Project Specific
+*.local.sql
+uploads/
+temp/
+supabase/seed/local/
 
 # Windows / IDE
 .DS_Store

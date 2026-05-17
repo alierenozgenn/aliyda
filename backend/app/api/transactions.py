@@ -1,64 +1,90 @@
 from fastapi import APIRouter, Depends, Query
-from typing import Optional
-from app.dependencies.auth import get_current_user
-from app.services.supabase_client import get_supabase
+from typing import Dict, Any, List
+from supabase import Client
+
+from app.core.auth import get_current_user_id
+from app.api.dependencies import get_db_client
+from app.schemas.domain import ManualTransactionCreate, TransactionUpdateRequest
+from app.schemas.base import success_response, error_response, BaseResponse
+from app.services.transaction_service import TransactionService
+from app.services.summary_service import SummaryService
 
 router = APIRouter()
 
-@router.get("/categories")
-async def list_categories():
-    sb = get_supabase()
-    res = sb.table("categories").select("*").execute()
-    return res.data
+def get_tx_service(db: Client = Depends(get_db_client)) -> TransactionService:
+    return TransactionService(db)
 
-@router.get("/")
-async def list_transactions(
-    date_from:   Optional[str]  = Query(None),
-    date_to:     Optional[str]  = Query(None),
-    category_id: Optional[str]  = Query(None),
-    direction:   Optional[str]  = Query(None),
-    is_verified: Optional[bool] = Query(None),
-    page:        int = Query(1, ge=1),
-    per_page:    int = Query(50, le=200),
-    user = Depends(get_current_user)
+def get_summary_service(db: Client = Depends(get_db_client)) -> SummaryService:
+    return SummaryService(db)
+
+@router.post("/manual", response_model=BaseResponse[str])
+async def create_manual_transaction(
+    month: str,
+    data: ManualTransactionCreate,
+    user_id: str = Depends(get_current_user_id),
+    tx_service: TransactionService = Depends(get_tx_service),
+    sum_service: SummaryService = Depends(get_summary_service)
 ):
-    sb = get_supabase()
-    q = sb.table("transactions").select("*, categories(name,color)").eq("user_id", user["user_id"])
-    if date_from:   q = q.gte("date", date_from)
-    if date_to:     q = q.lte("date", date_to)
-    if category_id: q = q.eq("category_id", category_id)
-    if direction:   q = q.eq("direction", direction)
-    if is_verified is not None: q = q.eq("is_verified", is_verified)
-    offset = (page - 1) * per_page
-    return q.order("date", desc=True).range(offset, offset + per_page - 1).execute().data
+    try:
+        tx_id = tx_service.create_manual_transaction(user_id=user_id, month=month, data=data)
+        # Recalculate summary since a manual transaction affects the dashboard immediately
+        sum_service.recalculate_monthly_summary(user_id=user_id, month=month)
+        return success_response(data=tx_id, message="İşlem başarıyla eklendi.")
+    except Exception as e:
+        return error_response(code="TRANSACTION_CREATE_ERROR", message=str(e))
 
-@router.patch("/{transaction_id}/verify")
-async def verify_transaction(transaction_id: str, body: dict, user = Depends(get_current_user)):
-    sb = get_supabase()
-    update_data = {k: v for k, v in body.items()
-                   if k in ("category_id","description","amount","direction","date")}
-    update_data["is_verified"] = True
-    result = sb.table("transactions").update(update_data).eq(
-        "id", transaction_id
-    ).eq("user_id", user["user_id"]).execute()
+@router.get("", response_model=BaseResponse[List[Dict[str, Any]]])
+async def list_transactions(
+    month: str = Query(..., description="Format: YYYY-MM"),
+    user_id: str = Depends(get_current_user_id),
+    tx_service: TransactionService = Depends(get_tx_service)
+):
+    try:
+        transactions = tx_service.list_transactions(month=month)
+        return success_response(data=transactions)
+    except Exception as e:
+        return error_response(code="TRANSACTION_LIST_ERROR", message=str(e))
 
-    # Kategori degisikliginde ogrenilen kural kaydet
-    if "category_id" in body and "description" in body:
-        keyword = body["description"][:30].lower().strip()
-        sb.table("category_rules").upsert({
-            "user_id": user["user_id"],
-            "keyword": keyword,
-            "category_id": body["category_id"]
-        }, on_conflict="user_id,keyword").execute()
 
-    return result.data
+@router.patch("/{transaction_id}", response_model=BaseResponse[str])
+async def update_transaction(
+    transaction_id: str,
+    data: TransactionUpdateRequest,
+    user_id: str = Depends(get_current_user_id),
+    tx_service: TransactionService = Depends(get_tx_service),
+    sum_service: SummaryService = Depends(get_summary_service)
+):
+    try:
+        tx_service.update_transaction(transaction_id, data)
+        # If date changes the month, both months need recalc — but for now recalc the current month
+        # The DB trigger marks summary as stale automatically, recalculate is optional here
+        return success_response(data=transaction_id, message="İşlem güncellendi.")
+    except Exception as e:
+        return error_response(code="TRANSACTION_UPDATE_ERROR", message=str(e))
 
-@router.patch("/bulk-verify")
-async def bulk_verify(body: dict, user = Depends(get_current_user)):
-    sb = get_supabase()
-    ids = body.get("transaction_ids", [])
-    if not ids: return {"updated": 0}
-    result = sb.table("transactions").update({"is_verified": True}).in_(
-        "id", ids
-    ).eq("user_id", user["user_id"]).execute()
-    return {"updated": len(result.data)}
+
+@router.delete("/{transaction_id}", response_model=BaseResponse[str])
+async def delete_transaction(
+    transaction_id: str,
+    user_id: str = Depends(get_current_user_id),
+    tx_service: TransactionService = Depends(get_tx_service)
+):
+    try:
+        tx_service.soft_delete_transaction(transaction_id)
+        # DB trigger marks summary stale automatically
+        return success_response(data=transaction_id, message="İşlem silindi.")
+    except Exception as e:
+        return error_response(code="TRANSACTION_DELETE_ERROR", message=str(e))
+
+
+@router.post("/{transaction_id}/restore", response_model=BaseResponse[str])
+async def restore_transaction(
+    transaction_id: str,
+    user_id: str = Depends(get_current_user_id),
+    tx_service: TransactionService = Depends(get_tx_service)
+):
+    try:
+        tx_service.restore_transaction(transaction_id)
+        return success_response(data=transaction_id, message="İşlem geri alındı.")
+    except Exception as e:
+        return error_response(code="TRANSACTION_RESTORE_ERROR", message=str(e))
