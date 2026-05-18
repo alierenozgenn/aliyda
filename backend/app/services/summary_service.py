@@ -11,7 +11,6 @@ class SummaryService:
         self.db.rpc(
             "recalculate_monthly_summary",
             {
-                "p_user_id": user_id,
                 "p_month": month
             }
         ).execute()

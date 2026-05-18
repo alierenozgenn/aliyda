@@ -1,17 +1,17 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import {
-  LayoutDashboard, Upload, CheckSquare,
+  LayoutDashboard, Upload, ListOrdered,
   MessageSquare, LogOut, Target, Landmark
 } from 'lucide-react'
 
 const navItems = [
-  { to: '/',        icon: LayoutDashboard, label: 'Dashboard',        end: true },
-  { to: '/accounts',icon: Landmark,        label: 'Hesaplarım' },
-  { to: '/upload',  icon: Upload,          label: 'PDF Yükle' },
-  { to: '/verify',  icon: CheckSquare,     label: 'İşlemlerim' },
-  { to: '/chat',    icon: MessageSquare,   label: 'Chatbot' },
-  { to: '/goals',   icon: Target,          label: 'Hedefler' },
+  { to: '/',             icon: LayoutDashboard, label: 'Dashboard',    end: true },
+  { to: '/accounts',     icon: Landmark,        label: 'Hesaplarım' },
+  { to: '/transactions', icon: ListOrdered,     label: 'İşlemlerim' },
+  { to: '/upload',       icon: Upload,          label: 'PDF Yükle' },
+  { to: '/chat',         icon: MessageSquare,   label: 'Chatbot' },
+  { to: '/goals',        icon: Target,          label: 'Hedefler' },
 ]
 
 export default function Layout() {

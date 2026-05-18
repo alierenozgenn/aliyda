@@ -19,6 +19,12 @@ class AccountCreateRequest(BaseModel):
     institution_name: Optional[str] = None
     currency: str = "TRY"
 
+class AccountUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    account_type: Optional[str] = None
+    institution_name: Optional[str] = None
+    currency: Optional[str] = None
+
 def get_account_service(db: Client = Depends(get_db_client)) -> AccountService:
     # get_db_client returns user-scoped client — correct for auth.uid() to work
     return AccountService(db)
@@ -57,6 +63,31 @@ async def list_accounts(
         return success_response(data=accounts)
     except Exception as e:
         return error_response(code="ACCOUNT_LIST_ERROR", message=str(e))
+
+
+@router.patch("/{account_id}", response_model=BaseResponse[Dict[str, Any]])
+async def update_account(
+    account_id: str,
+    data: AccountUpdateRequest,
+    user_id: str = Depends(get_current_user_id),
+    service: AccountService = Depends(get_account_service),
+):
+    if data.account_type is not None and data.account_type not in VALID_ACCOUNT_TYPES:
+        return error_response(
+            code="INVALID_ACCOUNT_TYPE",
+            message=f"Geçersiz hesap türü. Olası değerler: {', '.join(VALID_ACCOUNT_TYPES)}"
+        )
+    try:
+        account = service.update_account(
+            account_id=account_id,
+            name=data.name,
+            account_type=data.account_type,
+            institution_name=data.institution_name,
+            currency=data.currency,
+        )
+        return success_response(data=account, message="Hesap başarıyla güncellendi.")
+    except Exception as e:
+        return error_response(code="ACCOUNT_UPDATE_ERROR", message=str(e))
 
 
 @router.delete("/{account_id}", response_model=BaseResponse[str])

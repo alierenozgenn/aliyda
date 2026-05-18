@@ -52,6 +52,29 @@ class AccountService:
         )
         return response.data or []
 
+    def update_account(
+        self,
+        account_id: str,
+        name: str = None,
+        account_type: str = None,
+        institution_name: str = None,
+        currency: str = None,
+    ) -> Dict[str, Any]:
+        update_data = {}
+        if name is not None:
+            update_data["name"] = name
+        if account_type is not None:
+            update_data["account_type"] = account_type
+        if institution_name is not None:
+            update_data["institution_name"] = institution_name
+        if currency is not None:
+            update_data["currency"] = currency
+
+        if update_data:
+            self.db.table("accounts").update(update_data).eq("id", account_id).execute()
+
+        return self.get_account(account_id)
+
     def archive_account(self, account_id: str) -> bool:
         self.db.table("accounts").update({"is_active": False}).eq("id", account_id).execute()
         return True

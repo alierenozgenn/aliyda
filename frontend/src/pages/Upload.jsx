@@ -1,8 +1,17 @@
 import { useState, useEffect } from 'react'
-import { getStatements, uploadStatement, getDrafts, approveDraft, rejectDraft, getAccounts, createAccount } from '../services/api'
-import { Upload, CheckCircle, XCircle, Clock, Plus, X } from 'lucide-react'
+import { getStatements, uploadStatement, getDrafts, approveDraft, rejectDraft, getAccounts, createAccount, finalizeStatement } from '../services/api'
+import { Upload, CheckCircle, XCircle, Clock, Plus, X, AlertTriangle, ArrowRight } from 'lucide-react'
 
-const MONTHS = ['2026-05', '2026-04', '2026-03', '2026-02']
+function buildMonths() {
+  const months = []
+  const now = new Date()
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+  }
+  return months
+}
+const MONTHS = buildMonths()
 
 const ACCOUNT_TYPES = [
   { value: 'bank', label: 'Banka Hesabı' },
@@ -136,6 +145,8 @@ export default function UploadPage() {
   const [uploading, setUploading] = useState(false)
   const [message, setMessage] = useState('')
   const [showCreateAccount, setShowCreateAccount] = useState(false)
+  const [finalizing, setFinalizing] = useState(false)
+  const [incomeWarning, setIncomeWarning] = useState(false)
 
   const loadAccounts = () => {
     getAccounts().then(res => {
@@ -159,6 +170,7 @@ export default function UploadPage() {
     if (!file || !accountId) return
     setUploading(true)
     setMessage('')
+    setIncomeWarning(false)
     const formData = new FormData()
     formData.append('file', file)
     formData.append('month', month)
@@ -166,6 +178,9 @@ export default function UploadPage() {
     try {
       const res = await uploadStatement(formData)
       setMessage(`✅ PDF işlendi. ${res.data?.draft_count || 0} işlem onay bekliyor.`)
+      if (res.data?.income_detected === false) {
+        setIncomeWarning(true)
+      }
       setFile(null)
       loadStatements()
     } catch (err) {
@@ -190,6 +205,25 @@ export default function UploadPage() {
   const handleReject = async (draftId) => {
     await rejectDraft(draftId, 'Kullanıcı tarafından reddedildi.')
     setDrafts(prev => prev.filter(d => d.id !== draftId))
+  }
+
+  const handleFinalize = async () => {
+    const pendingStatements = statements.filter(s => s.status === 'pending_review')
+    if (pendingStatements.length === 0) return
+    setFinalizing(true)
+    setMessage('')
+    try {
+      for (const stmt of pendingStatements) {
+        await finalizeStatement(stmt.id)
+      }
+      setMessage('✅ Ay başarıyla tamamlandı. Dashboard güncellenmiştir.')
+      loadStatements()
+    } catch (err) {
+      const msg = err.response?.data?.error?.message || 'Tamamlama başarısız.'
+      setMessage(`❌ ${msg}`)
+    } finally {
+      setFinalizing(false)
+    }
   }
 
   return (
@@ -257,6 +291,26 @@ export default function UploadPage() {
 
           {message && <p className="text-sm text-gray-300">{message}</p>}
 
+          {incomeWarning && (
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 flex flex-col gap-2 mt-2">
+              <div className="flex items-center gap-2 text-amber-400 font-medium text-sm">
+                <AlertTriangle size={18} />
+                <span>Gelir Tespit Edilemedi</span>
+              </div>
+              <p className="text-gray-400 text-xs leading-relaxed">
+                Yüklediğiniz PDF ekstresinde aylık gelirinizi temsil eden bir işlem bulunamadı. 
+                Finansal analizlerinizin ve bütçe planlamanızın doğru çalışması için lütfen 
+                <strong> Aylık Hedefler</strong> sayfasından bu ayki gelirinizi manuel bildirin.
+              </p>
+              <a 
+                href="/goals"
+                className="text-xs text-amber-400 hover:text-amber-300 font-medium flex items-center gap-1 mt-1 transition-colors self-start"
+              >
+                Aylık Hedeflere Git <ArrowRight size={14} />
+              </a>
+            </div>
+          )}
+
           <button
             type="submit"
             disabled={uploading || !file || !accountId}
@@ -277,7 +331,18 @@ export default function UploadPage() {
       {/* Statement List */}
       {statements.length > 0 && (
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6">
-          <h2 className="text-white font-semibold mb-4">Bu Aydaki PDF'ler</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-white font-semibold">Bu Aydaki PDF'ler</h2>
+            {statements.some(s => s.status === 'pending_review') && (
+              <button
+                onClick={handleFinalize}
+                disabled={finalizing}
+                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-4 py-1.5 rounded-lg text-xs font-medium transition-colors"
+              >
+                {finalizing ? 'Tamamlanıyor...' : '✅ Ayı Tamamla'}
+              </button>
+            )}
+          </div>
           <div className="space-y-2">
             {statements.map(stmt => (
               <div key={stmt.id} className="flex items-center justify-between text-sm">

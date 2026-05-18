@@ -98,7 +98,11 @@ async def upload_statement(
         logger.info(f"PDF işlendi başarıyla. {len(transactions)} draft oluşturuldu.")
 
         return success_response(
-            data={"statement_id": statement_id, "draft_count": len(transactions)},
+            data={
+                "statement_id": statement_id, 
+                "draft_count": len(transactions),
+                "income_detected": extracted_data.get("income_detected", False)
+            },
             message=f"PDF işlendi. {len(transactions)} işlem onayınızı bekliyor.",
         )
 

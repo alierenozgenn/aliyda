@@ -55,9 +55,28 @@ async def update_transaction(
     sum_service: SummaryService = Depends(get_summary_service)
 ):
     try:
+        # Get original transaction to know its month before update
+        orig_response = tx_service.db.table("transactions").select("month").eq("id", transaction_id).single().execute()
+        orig_month = orig_response.data.get("month") if orig_response.data else None
+
         tx_service.update_transaction(transaction_id, data)
-        # If date changes the month, both months need recalc — but for now recalc the current month
-        # The DB trigger marks summary as stale automatically, recalculate is optional here
+
+        # Get updated transaction to know if month changed
+        updated_response = tx_service.db.table("transactions").select("month").eq("id", transaction_id).single().execute()
+        new_month = updated_response.data.get("month") if updated_response.data else None
+
+        # Recalculate summaries to ensure immediate UI consistency
+        if orig_month:
+            try:
+                sum_service.recalculate_monthly_summary(user_id=user_id, month=orig_month)
+            except Exception:
+                pass
+        if new_month and new_month != orig_month:
+            try:
+                sum_service.recalculate_monthly_summary(user_id=user_id, month=new_month)
+            except Exception:
+                pass
+
         return success_response(data=transaction_id, message="İşlem güncellendi.")
     except Exception as e:
         return error_response(code="TRANSACTION_UPDATE_ERROR", message=str(e))
@@ -67,11 +86,23 @@ async def update_transaction(
 async def delete_transaction(
     transaction_id: str,
     user_id: str = Depends(get_current_user_id),
-    tx_service: TransactionService = Depends(get_tx_service)
+    tx_service: TransactionService = Depends(get_tx_service),
+    sum_service: SummaryService = Depends(get_summary_service)
 ):
     try:
+        # Get transaction month
+        orig_response = tx_service.db.table("transactions").select("month").eq("id", transaction_id).single().execute()
+        month = orig_response.data.get("month") if orig_response.data else None
+
         tx_service.soft_delete_transaction(transaction_id)
-        # DB trigger marks summary stale automatically
+
+        # Recalculate summary
+        if month:
+            try:
+                sum_service.recalculate_monthly_summary(user_id=user_id, month=month)
+            except Exception:
+                pass
+
         return success_response(data=transaction_id, message="İşlem silindi.")
     except Exception as e:
         return error_response(code="TRANSACTION_DELETE_ERROR", message=str(e))
@@ -81,10 +112,23 @@ async def delete_transaction(
 async def restore_transaction(
     transaction_id: str,
     user_id: str = Depends(get_current_user_id),
-    tx_service: TransactionService = Depends(get_tx_service)
+    tx_service: TransactionService = Depends(get_tx_service),
+    sum_service: SummaryService = Depends(get_summary_service)
 ):
     try:
+        # Get transaction month
+        orig_response = tx_service.db.table("transactions").select("month").eq("id", transaction_id).single().execute()
+        month = orig_response.data.get("month") if orig_response.data else None
+
         tx_service.restore_transaction(transaction_id)
+
+        # Recalculate summary
+        if month:
+            try:
+                sum_service.recalculate_monthly_summary(user_id=user_id, month=month)
+            except Exception:
+                pass
+
         return success_response(data=transaction_id, message="İşlem geri alındı.")
     except Exception as e:
         return error_response(code="TRANSACTION_RESTORE_ERROR", message=str(e))

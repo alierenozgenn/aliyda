@@ -21,6 +21,7 @@ api.interceptors.request.use(async (config) => {
 // --- Accounts ---
 export const getAccounts = () => api.get('/accounts').then(r => r.data)
 export const createAccount = (data) => api.post('/accounts', data).then(r => r.data)
+export const updateAccount = (id, data) => api.patch(`/accounts/${id}`, data).then(r => r.data)
 export const archiveAccount = (id) => api.delete(`/accounts/${id}`).then(r => r.data)
 
 // --- Transactions ---

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
 export default function Login() {
@@ -60,10 +60,18 @@ export default function Login() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white font-semibold py-3 rounded-lg transition-colors"
+            className="w-full bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white font-semibold py-3 rounded-lg transition-colors animate-pulse-subtle"
           >
             {loading ? 'Giriş yapılıyor...' : 'Giriş Yap'}
           </button>
+
+          {/* Register Link */}
+          <p className="text-center text-sm text-gray-500">
+            Hesabınız yok mu?{' '}
+            <Link to="/register" className="text-violet-400 hover:text-violet-300 transition-colors">
+              Kayıt Olun
+            </Link>
+          </p>
         </form>
       </div>
     </div>

@@ -27,14 +27,19 @@ async def approve_draft(
 ):
     try:
         # draft_service will update the draft if data is provided, then approve it
-        transaction_id = draft_service.approve_draft(draft_id, updates=data)
+        result = draft_service.approve_draft(draft_id, updates=data)
+        tx_id = result["transaction_id"]
+        month = result["month"]
         
-        # After approving, we should mark the summary as stale, but usually the db trigger does it.
-        # Alternatively we can trigger recalculate if we want immediate consistency.
-        # For performance, usually the frontend triggers recalculate at the end, 
-        # or we just rely on the DB trigger marking it stale.
+        # Immediate consistency: recalculate the summary for this month
+        try:
+            sum_service.recalculate_monthly_summary(user_id, month)
+        except Exception as summary_err:
+            # Don't fail the approval if summary recalculation fails, just log it
+            import logging
+            logging.getLogger(__name__).error(f"Error recalculating summary after approval: {summary_err}")
         
-        return success_response(data=transaction_id, message="İşlem onaylandı.")
+        return success_response(data=tx_id, message="İşlem onaylandı.")
     except Exception as e:
         return error_response(code="DRAFT_APPROVE_ERROR", message=str(e))
 

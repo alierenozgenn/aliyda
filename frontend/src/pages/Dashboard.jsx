@@ -1,34 +1,124 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { getDashboard, generateInsight } from '../services/api'
-import { TrendingUp, TrendingDown, Wallet, Sparkles } from 'lucide-react'
+import {
+  TrendingUp, TrendingDown, Wallet, Sparkles,
+  RefreshCw, ArrowRight, AlertTriangle,
+} from 'lucide-react'
 
-const MONTHS = [
-  '2026-05', '2026-04', '2026-03', '2026-02', '2026-01',
-  '2025-12', '2025-11', '2025-10',
-]
+// ──────────────────────────────────────────────
+// Helpers
+// ──────────────────────────────────────────────
+function buildMonths() {
+  const months = []
+  const now = new Date()
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+  }
+  return months
+}
+const MONTHS = buildMonths()
 
-function StatCard({ title, value, icon: Icon, color }) {
+const fmt = (n) =>
+  n != null
+    ? `₺${Number(n).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`
+    : '—'
+
+// ──────────────────────────────────────────────
+// Stat Card
+// ──────────────────────────────────────────────
+function StatCard({ title, value, icon: Icon, iconBg, textColor, subtitle }) {
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-gray-400 text-sm">{title}</span>
-        <div className={`p-2 rounded-lg ${color}`}>
-          <Icon size={16} />
+    <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 hover:border-gray-700 transition-colors">
+      <div className="flex items-start justify-between mb-3">
+        <div>
+          <p className="text-gray-400 text-xs font-medium mb-1">{title}</p>
+          <p className={`text-2xl font-bold ${textColor || 'text-white'}`}>{fmt(value)}</p>
+          {subtitle && <p className="text-xs text-gray-500 mt-1">{subtitle}</p>}
         </div>
-      </div>
-      <div className="text-2xl font-bold text-white">
-        {value != null
-          ? `₺${Number(value).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}`
-          : '—'}
+        <div className={`p-2.5 rounded-xl ${iconBg}`}>
+          <Icon size={18} />
+        </div>
       </div>
     </div>
   )
 }
 
+// ──────────────────────────────────────────────
+// Category Bar Chart (pure CSS)
+// ──────────────────────────────────────────────
+const CATEGORY_COLORS = [
+  'bg-violet-500', 'bg-blue-500', 'bg-emerald-500', 'bg-amber-500',
+  'bg-rose-500', 'bg-cyan-500', 'bg-orange-500', 'bg-pink-500',
+]
+
+function CategoryChart({ categories }) {
+  if (!categories || categories.length === 0) return null
+  const getValue = (cat) => Number(cat.amount ?? cat.total ?? 0)
+  const max = Math.max(...categories.map(getValue))
+
+  return (
+    <div className="space-y-3">
+      {categories.slice(0, 7).map((cat, i) => {
+        const val = getValue(cat)
+        const pct = max > 0 ? (val / max) * 100 : 0
+        return (
+          <div key={i} className="flex items-center gap-3">
+            <div className="w-24 text-xs text-gray-400 truncate text-right shrink-0">
+              {cat.category || 'Diğer'}
+            </div>
+            <div className="flex-1 bg-gray-800 rounded-full h-2.5 overflow-hidden">
+              <div
+                className={`h-full rounded-full ${CATEGORY_COLORS[i % CATEGORY_COLORS.length]} transition-all duration-500`}
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <div className="w-24 text-xs text-gray-300 text-right shrink-0">
+              {fmt(val)}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ──────────────────────────────────────────────
+// Income vs Expense ratio bar
+// ──────────────────────────────────────────────
+function IncomeExpenseBar({ income, expense }) {
+  const total = Number(income || 0) + Number(expense || 0)
+  if (total === 0) return null
+  const incomePct = Math.round((Number(income || 0) / total) * 100)
+  const expensePct = 100 - incomePct
+
+  return (
+    <div className="mt-4">
+      <div className="flex justify-between text-xs text-gray-500 mb-1.5">
+        <span>Gelir {incomePct}%</span>
+        <span>Gider {expensePct}%</span>
+      </div>
+      <div className="flex h-2 rounded-full overflow-hidden">
+        <div
+          className="bg-emerald-500 transition-all duration-500"
+          style={{ width: `${incomePct}%` }}
+        />
+        <div
+          className="bg-red-500 transition-all duration-500"
+          style={{ width: `${expensePct}%` }}
+        />
+      </div>
+    </div>
+  )
+}
+
+// ──────────────────────────────────────────────
+// Main
+// ──────────────────────────────────────────────
 export default function Dashboard() {
   const { user } = useAuth()
-  const [month, setMonth] = useState('2026-05')
+  const [month, setMonth] = useState(MONTHS[0])
   const [dashboard, setDashboard] = useState(null)
   const [insight, setInsight] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -39,16 +129,21 @@ export default function Dashboard() {
     setLoading(true)
     setError('')
     setDashboard(null)
+    setInsight(null)
     getDashboard(month)
-      .then(res => setDashboard(res.data))
+      .then(res => {
+        setDashboard(res.data)
+        // If dashboard includes a fresh insight, show it
+        if (res.data?.latest_insight) setInsight(res.data.latest_insight)
+      })
       .catch(() => setError('Dashboard yüklenemedi.'))
       .finally(() => setLoading(false))
   }, [month])
 
-  const handleGenerateInsight = async () => {
+  const handleGenerateInsight = async (force = false) => {
     setInsightLoading(true)
     try {
-      const res = await generateInsight(month)
+      const res = await generateInsight(month, force)
       setInsight(res.data)
     } catch {
       setInsight(null)
@@ -57,76 +152,158 @@ export default function Dashboard() {
     }
   }
 
+  const netBalance = dashboard ? Number(dashboard.net_balance ?? 0) : 0
+  const isNegative = netBalance < 0
+
   return (
-    <div className="p-8">
+    <div className="p-8 max-w-5xl">
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold text-white">Dashboard</h1>
-          <p className="text-gray-400 text-sm mt-1">Doğrulanmış verilerinizin özeti</p>
+          <p className="text-gray-400 text-sm mt-1">
+            {user?.email && <span className="text-gray-500">{user.email} · </span>}
+            Doğrulanmış verilerinizin özeti
+          </p>
         </div>
         <select
           value={month}
           onChange={e => setMonth(e.target.value)}
-          className="bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-4 py-2"
+          className="bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-4 py-2 focus:outline-none focus:border-violet-500"
         >
           {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
         </select>
       </div>
 
-      {loading && <p className="text-gray-400">Yükleniyor...</p>}
-      {error && <p className="text-red-400">{error}</p>}
+      {loading && (
+        <div className="flex items-center gap-2 text-gray-400 text-sm">
+          <RefreshCw size={14} className="animate-spin" />
+          Yükleniyor...
+        </div>
+      )}
+      {error && (
+        <div className="bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-xl text-sm">
+          ⚠ {error}
+        </div>
+      )}
 
       {!loading && !dashboard && !error && (
-        <div className="bg-gray-900 border border-dashed border-gray-700 rounded-xl p-10 text-center">
-          <p className="text-gray-400">Bu ay için henüz veri yok.</p>
+        <div className="bg-gray-900 border border-dashed border-gray-700 rounded-xl p-12 text-center">
+          <Wallet size={36} className="text-gray-600 mx-auto mb-3" />
+          <p className="text-gray-400 font-medium">Bu ay için henüz veri yok.</p>
           <p className="text-gray-500 text-sm mt-1">Manuel işlem ekleyin veya PDF yükleyin.</p>
+          <div className="flex gap-3 justify-center mt-4">
+            <a href="/transactions" className="text-sm text-violet-400 hover:text-violet-300 flex items-center gap-1">
+              İşlem Ekle <ArrowRight size={14} />
+            </a>
+            <a href="/upload" className="text-sm text-violet-400 hover:text-violet-300 flex items-center gap-1">
+              PDF Yükle <ArrowRight size={14} />
+            </a>
+          </div>
         </div>
       )}
 
       {dashboard && (
         <>
-          {/* Stat Cards */}
-          <div className="grid grid-cols-3 gap-4 mb-8">
-            <StatCard title="Toplam Gelir" value={dashboard.total_income} icon={TrendingUp} color="bg-green-500/20 text-green-400" />
-            <StatCard title="Toplam Gider" value={dashboard.total_expense} icon={TrendingDown} color="bg-red-500/20 text-red-400" />
-            <StatCard title="Net Bakiye" value={dashboard.net_balance} icon={Wallet} color="bg-violet-500/20 text-violet-400" />
-          </div>
-
-          {/* Top Categories */}
-          {dashboard.top_categories && dashboard.top_categories.length > 0 && (
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-5">
-              <h2 className="text-white font-semibold mb-4">En Yüksek Kategoriler</h2>
-              <div className="space-y-2">
-                {dashboard.top_categories.slice(0, 5).map((cat, i) => (
-                  <div key={i} className="flex items-center justify-between text-sm">
-                    <span className="text-gray-300">{cat.category || 'Diğer'}</span>
-                    <span className="text-gray-400">₺{Number(cat.total).toLocaleString('tr-TR')}</span>
-                  </div>
-                ))}
-              </div>
+          {/* Negative balance warning */}
+          {isNegative && (
+            <div className="mb-6 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 flex items-center gap-2 text-sm text-red-400">
+              <AlertTriangle size={16} />
+              Bu ay giderleriniz gelirinizi aşıyor. Net bakiye negatif.
             </div>
           )}
+
+          {/* Stat Cards */}
+          <div className="grid grid-cols-3 gap-4 mb-6">
+            <StatCard
+              title="Toplam Gelir"
+              value={dashboard.total_income}
+              icon={TrendingUp}
+              iconBg="bg-emerald-500/20 text-emerald-400"
+              textColor="text-emerald-400"
+              subtitle={`${dashboard.transaction_count ?? '—'} işlem`}
+            />
+            <StatCard
+              title="Toplam Gider"
+              value={dashboard.total_expense}
+              icon={TrendingDown}
+              iconBg="bg-red-500/20 text-red-400"
+              textColor="text-red-400"
+            />
+            <StatCard
+              title="Net Bakiye"
+              value={dashboard.net_balance}
+              icon={Wallet}
+              iconBg="bg-violet-500/20 text-violet-400"
+              textColor={isNegative ? 'text-red-400' : 'text-violet-400'}
+            />
+          </div>
+
+          {/* Income vs Expense bar */}
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-5">
+            <h2 className="text-white text-sm font-semibold mb-3">Gelir / Gider Oranı</h2>
+            <IncomeExpenseBar income={dashboard.total_income} expense={dashboard.total_expense} />
+          </div>
+
+          {/* Categories + Largest */}
+          <div className="grid grid-cols-2 gap-5 mb-5">
+            {/* Category chart */}
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+              <h2 className="text-white text-sm font-semibold mb-4">Harcama Kategorileri</h2>
+              {dashboard.top_categories && dashboard.top_categories.length > 0 ? (
+                <CategoryChart categories={dashboard.top_categories} />
+              ) : (
+                <p className="text-gray-500 text-sm">Kategori verisi yok.</p>
+              )}
+            </div>
+
+            {/* Largest transactions */}
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+              <h2 className="text-white text-sm font-semibold mb-4">En Büyük İşlemler</h2>
+              {dashboard.largest_transactions && dashboard.largest_transactions.length > 0 ? (
+                <div className="space-y-3">
+                  {dashboard.largest_transactions.slice(0, 5).map((tx, i) => (
+                    <div key={i} className="flex items-center justify-between">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-gray-300 text-sm truncate">{tx.description}</p>
+                        <p className="text-gray-500 text-xs">{tx.category || 'Diğer'} · {tx.transaction_date}</p>
+                      </div>
+                      <span className={`text-sm font-semibold ml-3 shrink-0 ${
+                        tx.direction === 'income' ? 'text-emerald-400' : 'text-red-400'
+                      }`}>
+                        {tx.direction === 'income' ? '+' : '-'}{fmt(tx.amount)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-gray-500 text-sm">Veri yok.</p>
+              )}
+            </div>
+          </div>
 
           {/* AI Insight */}
           <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-white font-semibold flex items-center gap-2">
+              <h2 className="text-white text-sm font-semibold flex items-center gap-2">
                 <Sparkles size={16} className="text-violet-400" />
                 AI Yorumu
               </h2>
               <button
-                onClick={handleGenerateInsight}
+                onClick={() => handleGenerateInsight(!!insight)}
                 disabled={insightLoading}
-                className="text-xs text-violet-400 hover:text-violet-300 disabled:opacity-50"
+                className="flex items-center gap-1.5 text-xs text-violet-400 hover:text-violet-300 disabled:opacity-50 transition-colors"
               >
-                {insightLoading ? 'Üretiliyor...' : 'Yorum üret'}
+                <RefreshCw size={12} className={insightLoading ? 'animate-spin' : ''} />
+                {insightLoading ? 'Üretiliyor...' : insight ? 'Yenile' : 'Yorum Üret'}
               </button>
             </div>
             {insight ? (
               <p className="text-gray-300 text-sm leading-relaxed">{insight.insight_text}</p>
             ) : (
-              <p className="text-gray-500 text-sm">"Yorum üret" butonuna tıklayarak AI yorumu alabilirsiniz.</p>
+              <p className="text-gray-500 text-sm">
+                "Yorum Üret" butonuna tıklayarak bu aya özel AI yorumu alabilirsiniz.
+              </p>
             )}
           </div>
         </>
