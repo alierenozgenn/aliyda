@@ -2,7 +2,7 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import {
   LayoutDashboard, Upload, ListOrdered,
-  MessageSquare, LogOut, Target, Landmark
+  MessageSquare, LogOut, Target, Landmark, Shield
 } from 'lucide-react'
 
 const navItems = [
@@ -10,6 +10,7 @@ const navItems = [
   { to: '/accounts',     icon: Landmark,        label: 'Hesaplarım' },
   { to: '/transactions', icon: ListOrdered,     label: 'İşlemlerim' },
   { to: '/upload',       icon: Upload,          label: 'PDF Yükle' },
+  { to: '/verify',       icon: Shield,          label: 'Doğrulama' },
   { to: '/chat',         icon: MessageSquare,   label: 'Chatbot' },
   { to: '/goals',        icon: Target,          label: 'Hedefler' },
 ]

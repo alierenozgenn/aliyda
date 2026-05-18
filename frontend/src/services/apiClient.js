@@ -1,13 +1,6 @@
-import axios from 'axios'
-import { supabase } from './supabaseClient'
-
-export const apiClient = axios.create({
-  baseURL: (import.meta.env.VITE_API_URL || 'http://localhost:8000') + '/api/v1'
-})
-
-apiClient.interceptors.request.use(async (config) => {
-  const { data } = await supabase.auth.getSession()
-  const token = data.session?.access_token
-  if (token) config.headers.Authorization = `Bearer ${token}`
-  return config
-})
+/**
+ * @deprecated - Bu dosya geriye uyumluluk için korunmuştur.
+ * Tüm yeni kodlarda '../services/api.js' kullanın.
+ */
+import api from './api'
+export const apiClient = api

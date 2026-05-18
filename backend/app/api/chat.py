@@ -49,7 +49,7 @@ async def list_chat_sessions(
     chat_service: ChatService = Depends(get_chat_service),
 ):
     try:
-        sessions = chat_service.list_sessions()
+        sessions = chat_service.list_sessions(user_id=user_id)
         return success_response(data=sessions)
     except Exception as e:
         return error_response(code="SESSION_LIST_ERROR", message=str(e))
@@ -89,7 +89,6 @@ async def send_chat_message(
             )
 
         # 2. Build SMART context from DB — only relevant fields for this question
-        #    This replaces sending all data to Gemini every time (Adım 43)
         if data.month:
             sum_service.ensure_summary_fresh(user_id, data.month)
         

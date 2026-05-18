@@ -231,8 +231,19 @@ export default function Transactions() {
 
   const load = () => {
     setLoading(true)
-    getTransactions(month)
-      .then(res => setTransactions(res.data || []))
+    // İki ayrı istek: aktif işlemler + silinmişler
+    Promise.all([
+      getTransactions(month, false),
+      getTransactions(month, true),
+    ])
+      .then(([activeRes, allRes]) => {
+        const active = activeRes.data || []
+        const all = allRes.data || []
+        // Silinmişler = all'da olup active'de olmayanlar
+        const activeIds = new Set(active.map(t => t.id))
+        const deleted = all.filter(t => !activeIds.has(t.id))
+        setTransactions([...active.map(t => ({ ...t, is_deleted: false })), ...deleted.map(t => ({ ...t, is_deleted: true }))])
+      })
       .catch(() => setTransactions([]))
       .finally(() => setLoading(false))
   }
@@ -263,7 +274,7 @@ export default function Transactions() {
     setSaving(true)
     setError('')
     try {
-      await createManualTransaction(month, {
+      await createManualTransaction({
         transaction_date: form.transaction_date,
         transaction_time: form.transaction_time || null,
         description: form.description,

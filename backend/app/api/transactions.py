@@ -22,15 +22,20 @@ def get_summary_service(db: Client = Depends(get_db_client)) -> SummaryService:
 
 @router.post("/manual", response_model=BaseResponse[str])
 async def create_manual_transaction(
-    month: str = Query(...),
-    data: ManualTransactionCreate = ...,
+    data: ManualTransactionCreate,
     user_id: str = Depends(get_current_user_id),
     tx_service: TransactionService = Depends(get_tx_service),
     sum_service: SummaryService = Depends(get_summary_service),
 ):
+    """Manuel işlem oluşturur. month, transaction_date'den otomatik türetilir."""
     try:
         tx_id = tx_service.create_manual_transaction(user_id=user_id, data=data)
-        sum_service.recalculate_monthly_summary(user_id=user_id, month=month)
+        # Derive month from the transaction date (YYYY-MM)
+        month = str(data.transaction_date)[:7]
+        try:
+            sum_service.recalculate_monthly_summary(user_id=user_id, month=month)
+        except Exception:
+            pass  # Summary recalc failure shouldn't block transaction creation
         return success_response(data=str(tx_id), message="İşlem başarıyla eklendi.")
     except Exception as e:
         return error_response(code="TRANSACTION_CREATE_ERROR", message=str(e))
@@ -39,11 +44,15 @@ async def create_manual_transaction(
 @router.get("", response_model=BaseResponse[List[Dict[str, Any]]])
 async def list_transactions(
     month: str = Query(..., description="Format: YYYY-MM"),
+    include_deleted: bool = Query(False, description="Silinmişleri dahil et"),
     user_id: str = Depends(get_current_user_id),
     tx_service: TransactionService = Depends(get_tx_service),
 ):
     try:
-        transactions = tx_service.list_transactions(user_id=user_id, month=month)
+        if include_deleted:
+            transactions = tx_service.list_all_transactions(user_id=user_id, month=month)
+        else:
+            transactions = tx_service.list_transactions(user_id=user_id, month=month)
         return success_response(data=transactions)
     except Exception as e:
         return error_response(code="TRANSACTION_LIST_ERROR", message=str(e))

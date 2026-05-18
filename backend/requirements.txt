@@ -6,11 +6,7 @@ pydantic-settings
 python-multipart
 supabase
 PyJWT
-langchain
-langchain-google-genai
-langgraph
-google-generativeai
-python-jose[cryptography]
+google-genai
 httpx
 pytest
 pytest-asyncio

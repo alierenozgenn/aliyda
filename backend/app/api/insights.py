@@ -8,6 +8,7 @@ from app.schemas.base import success_response, error_response, BaseResponse
 from app.services.insight_service import InsightService
 from app.services.summary_service import SummaryService
 from app.services.gemini_service import GeminiService
+from app.core.config import settings
 
 router = APIRouter()
 
@@ -29,13 +30,13 @@ async def generate_monthly_insight(
     try:
         # 1. Check if there's a fresh insight already
         if not force_refresh:
-            existing = insight_service.get_latest_insight(month)
+            existing = insight_service.get_latest_insight(user_id=user_id, month=month)
             if existing and not existing.get("is_stale"):
                 return success_response(data=existing, message="Mevcut güncel yorum kullanılıyor.")
 
         # 2. Get fresh dashboard data (source of truth is DB, not Gemini)
         sum_service.ensure_summary_fresh(user_id, month)
-        dashboard = sum_service.get_monthly_dashboard(month)
+        dashboard = sum_service.get_monthly_dashboard(user_id=user_id, month=month)
 
         if not dashboard:
             return error_response(
@@ -52,8 +53,8 @@ async def generate_monthly_insight(
             user_id=user_id,
             month=month,
             insight_text=insight_text,
-            model_used="gemini-1.5-flash",
-            prompt_version="v1.0"
+            model_used=settings.GEMINI_MODEL_CHAT,
+            prompt_version="v2.0"
         )
 
         return success_response(data=insight, message="Yorum üretildi.")

@@ -1,6 +1,7 @@
 from supabase import Client
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from app.schemas.domain import MonthlyProfileUpsert
+
 
 class MonthlyProfileService:
     def __init__(self, db: Client):
@@ -21,9 +22,13 @@ class MonthlyProfileService:
         ).execute()
         return response.data
 
-    def get_monthly_profile(self, month: str) -> Dict[str, Any]:
-        response = self.db.table("monthly_profiles")\
-            .select("*")\
-            .eq("month", month)\
+    def get_monthly_profile(self, user_id: str, month: str) -> Optional[Dict[str, Any]]:
+        """user_id filtresi eklendi — sadece kendi profilini görür."""
+        response = (
+            self.db.table("monthly_profiles")
+            .select("*")
+            .eq("user_id", user_id)
+            .eq("month", month)
             .execute()
+        )
         return response.data[0] if response.data else None

@@ -25,9 +25,10 @@ export const updateAccount = (id, data) => api.patch(`/accounts/${id}`, data).th
 export const archiveAccount = (id) => api.delete(`/accounts/${id}`).then(r => r.data)
 
 // --- Transactions ---
-export const getTransactions = (month) => api.get('/transactions', { params: { month } }).then(r => r.data)
-export const createManualTransaction = (month, data) =>
-  api.post('/transactions/manual', data, { params: { month } }).then(r => r.data)
+export const getTransactions = (month, includeDeleted = false) =>
+  api.get('/transactions', { params: { month, include_deleted: includeDeleted } }).then(r => r.data)
+export const createManualTransaction = (data) =>
+  api.post('/transactions/manual', data).then(r => r.data)
 export const updateTransaction = (id, data) => api.patch(`/transactions/${id}`, data).then(r => r.data)
 export const deleteTransaction = (id) => api.delete(`/transactions/${id}`).then(r => r.data)
 export const restoreTransaction = (id) => api.post(`/transactions/${id}/restore`).then(r => r.data)

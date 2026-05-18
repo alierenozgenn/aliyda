@@ -3,6 +3,10 @@ from google import genai
 from google.genai import types
 from typing import List, Dict, Any
 import json
+import time
+import logging
+
+logger = logging.getLogger(__name__)
 
 client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
@@ -80,6 +84,44 @@ Sen Aliyda, bir kişisel bütçe ve finans asistanısın.
 Eğer sana sorulan şeyin cevabı veride yoksa: "Bu konuda elimde yeterli veri yok, işlem eklemeyi veya PDF yüklemeyi deneyin." de.
 """
 
+# ─── Retry helper ───────────────────────────────
+MAX_RETRIES = 3
+RETRY_DELAYS = [5, 15, 30]  # seconds
+
+
+def _call_gemini_with_retry(model: str, contents, config) -> str:
+    """
+    Gemini API çağrısını retry mekanizmasıyla yapar.
+    503 (server overload) ve 429 (rate limit) hatalarında otomatik bekler ve tekrar dener.
+    """
+    last_error = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            response = client.models.generate_content(
+                model=model,
+                contents=contents,
+                config=config,
+            )
+            return response.text.strip()
+        except Exception as e:
+            error_str = str(e)
+            last_error = e
+
+            # Retryable hatalar: 503 (overload), 429 (rate limit)
+            is_retryable = any(code in error_str for code in ["503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED"])
+
+            if is_retryable and attempt < MAX_RETRIES - 1:
+                delay = RETRY_DELAYS[attempt]
+                logger.warning(
+                    f"Gemini gecici hata (deneme {attempt + 1}/{MAX_RETRIES}): {error_str[:100]}. "
+                    f"{delay}s sonra tekrar denenecek..."
+                )
+                time.sleep(delay)
+            else:
+                break
+
+    raise last_error
+
 
 class GeminiService:
     def __init__(self):
@@ -91,11 +133,14 @@ class GeminiService:
         PDF dosyasından işlemleri JSON olarak çıkarır.
         Roadmap kuralı: 1 PDF = 1 Gemini isteği.
         Gemini hiçbir hesaplama yapmaz, sadece veri çıkarır.
+        503/429 hatalarında otomatik retry yapar.
         """
         with open(file_path, "rb") as f:
             pdf_bytes = f.read()
 
-        response = client.models.generate_content(
+        logger.info(f"Gemini extraction baslatiliyor: model={self.extraction_model}, pdf_size={len(pdf_bytes)}")
+
+        text = _call_gemini_with_retry(
             model=self.extraction_model,
             contents=[
                 types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
@@ -107,7 +152,6 @@ class GeminiService:
             )
         )
 
-        text = response.text.strip()
         # Defensive cleanup in case model wraps in markdown
         if text.startswith("```json"):
             text = text[7:]
@@ -125,11 +169,12 @@ class GeminiService:
                 result["income_detected"] = any(
                     t.get("direction") == "income" for t in result["transactions"]
                 )
+            logger.info(f"Gemini extraction basarili: {len(result['transactions'])} islem cikarildi")
             return result
         except json.JSONDecodeError as e:
             raise ValueError(
-                f"Gemini geçerli JSON döndürmedi: {str(e)}\n"
-                f"Ham çıktı (ilk 500 karakter): {response.text[:500]}"
+                f"Gemini gecerli JSON dondurmedi: {str(e)}\n"
+                f"Ham cikti (ilk 500 karakter): {text[:500]}"
             )
 
     def generate_monthly_insight(self, dashboard_data: Dict[str, Any]) -> str:
@@ -143,14 +188,13 @@ class GeminiService:
 
         prompt = INSIGHT_PROMPT_TEMPLATE.format(month=month, data=data_str)
 
-        response = client.models.generate_content(
+        return _call_gemini_with_retry(
             model=self.chat_model,
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0.7,
             )
         )
-        return response.text.strip()
 
     def answer_chat_question(self, question: str, context: Dict[str, Any]) -> str:
         """
@@ -168,11 +212,10 @@ Kullanıcı sorusu: {question}
 
 Cevabın:"""
 
-        response = client.models.generate_content(
+        return _call_gemini_with_retry(
             model=self.chat_model,
             contents=full_prompt,
             config=types.GenerateContentConfig(
                 temperature=0.5,
             )
         )
-        return response.text.strip()

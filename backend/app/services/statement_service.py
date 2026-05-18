@@ -48,9 +48,10 @@ class StatementService:
         return response.data
 
     def soft_delete_statement(self, statement_id: str, reason: str = "User deleted") -> bool:
+        from datetime import datetime, timezone
         self.db.table("statements").update({
             "is_deleted": True,
-            "deleted_at": "now()",
+            "deleted_at": datetime.now(timezone.utc).isoformat(),
             "deleted_reason": reason,
         }).eq("id", statement_id).execute()
         return True
