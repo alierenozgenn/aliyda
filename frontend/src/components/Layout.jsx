@@ -24,25 +24,25 @@ export default function Layout() {
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-950 text-white">
+    <div className="flex min-h-screen bg-transparent text-white">
       {/* Sidebar */}
-      <aside className="w-56 bg-gray-900 border-r border-gray-800 flex flex-col shrink-0">
-        <div className="px-6 py-5 border-b border-gray-800">
-          <span className="text-xl font-bold text-violet-400">Aliyda</span>
-          <p className="text-gray-600 text-xs mt-0.5">Bütçe Asistanın</p>
+      <aside className="w-56 glass border-r border-gray-800/50 flex flex-col shrink-0">
+        <div className="px-6 py-5 border-b border-gray-800/50">
+          <span className="text-xl font-bold bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent drop-shadow-md">Aliyda</span>
+          <p className="text-gray-500 text-xs mt-0.5 tracking-wider uppercase">Bütçe Asistanın</p>
         </div>
 
-        <nav className="flex-1 p-4 space-y-1">
+        <nav className="flex-1 p-4 space-y-2">
           {navItems.map(({ to, icon: Icon, label, end }) => (
             <NavLink
               key={to}
               to={to}
               end={end}
               className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-300 ${
                   isActive
-                    ? 'bg-violet-600 text-white'
-                    : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                    ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-500/25'
+                    : 'text-gray-400 hover:bg-gray-800/50 hover:text-white hover:shadow-md'
                 }`
               }
             >

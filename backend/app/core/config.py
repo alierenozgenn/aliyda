@@ -19,8 +19,8 @@ class Settings(BaseSettings):
 
     # Gemini
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL_EXTRACTION: str = "gemini-2.0-flash"
-    GEMINI_MODEL_CHAT: str = "gemini-2.0-flash"
+    GEMINI_MODEL_EXTRACTION: str = "gemini-2.5-flash"
+    GEMINI_MODEL_CHAT: str = "gemini-2.5-flash"
 
     model_config = SettingsConfigDict(
         env_file=".env",

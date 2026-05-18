@@ -30,15 +30,18 @@ const fmt = (n) =>
 // ──────────────────────────────────────────────
 function StatCard({ title, value, icon: Icon, iconBg, textColor, subtitle }) {
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 hover:border-gray-700 transition-colors">
-      <div className="flex items-start justify-between mb-3">
+    <div className="glass-panel rounded-2xl p-6 hover-glow transition-all duration-300 relative overflow-hidden group">
+      {/* Decorative gradient orb */}
+      <div className={`absolute -right-6 -top-6 w-24 h-24 rounded-full opacity-20 blur-2xl transition-transform duration-500 group-hover:scale-150 ${iconBg.split(' ')[0].replace('/20', '')}`} />
+      
+      <div className="flex items-start justify-between mb-4 relative z-10">
         <div>
-          <p className="text-gray-400 text-xs font-medium mb-1">{title}</p>
-          <p className={`text-2xl font-bold ${textColor || 'text-white'}`}>{fmt(value)}</p>
-          {subtitle && <p className="text-xs text-gray-500 mt-1">{subtitle}</p>}
+          <p className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-2">{title}</p>
+          <p className={`text-3xl font-bold tracking-tight ${textColor || 'text-white'}`}>{fmt(value)}</p>
+          {subtitle && <p className="text-xs text-gray-500 mt-2 font-medium">{subtitle}</p>}
         </div>
-        <div className={`p-2.5 rounded-xl ${iconBg}`}>
-          <Icon size={18} />
+        <div className={`p-3 rounded-2xl backdrop-blur-md border border-white/5 shadow-inner ${iconBg}`}>
+          <Icon size={20} />
         </div>
       </div>
     </div>
@@ -240,16 +243,16 @@ export default function Dashboard() {
           </div>
 
           {/* Income vs Expense bar */}
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-5">
-            <h2 className="text-white text-sm font-semibold mb-3">Gelir / Gider Oranı</h2>
+          <div className="glass-panel rounded-2xl p-6 mb-6">
+            <h2 className="text-white text-sm font-semibold mb-3 tracking-wide uppercase">Gelir / Gider Oranı</h2>
             <IncomeExpenseBar income={dashboard.total_income} expense={dashboard.total_expense} />
           </div>
 
           {/* Categories + Largest */}
-          <div className="grid grid-cols-2 gap-5 mb-5">
+          <div className="grid grid-cols-2 gap-6 mb-6">
             {/* Category chart */}
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-              <h2 className="text-white text-sm font-semibold mb-4">Harcama Kategorileri</h2>
+            <div className="glass-panel rounded-2xl p-6">
+              <h2 className="text-white text-sm font-semibold mb-5 tracking-wide uppercase">Harcama Kategorileri</h2>
               {dashboard.top_categories && dashboard.top_categories.length > 0 ? (
                 <CategoryChart categories={dashboard.top_categories} />
               ) : (
@@ -258,17 +261,17 @@ export default function Dashboard() {
             </div>
 
             {/* Largest transactions */}
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-              <h2 className="text-white text-sm font-semibold mb-4">En Büyük İşlemler</h2>
+            <div className="glass-panel rounded-2xl p-6">
+              <h2 className="text-white text-sm font-semibold mb-5 tracking-wide uppercase">En Büyük İşlemler</h2>
               {dashboard.largest_transactions && dashboard.largest_transactions.length > 0 ? (
-                <div className="space-y-3">
+                <div className="space-y-4">
                   {dashboard.largest_transactions.slice(0, 5).map((tx, i) => (
-                    <div key={i} className="flex items-center justify-between">
+                    <div key={i} className="flex items-center justify-between group">
                       <div className="flex-1 min-w-0">
-                        <p className="text-gray-300 text-sm truncate">{tx.description}</p>
-                        <p className="text-gray-500 text-xs">{tx.category || 'Diğer'} · {tx.transaction_date}</p>
+                        <p className="text-gray-200 text-sm font-medium truncate group-hover:text-white transition-colors">{tx.description}</p>
+                        <p className="text-gray-500 text-xs mt-0.5">{tx.category || 'Diğer'} · {tx.transaction_date}</p>
                       </div>
-                      <span className={`text-sm font-semibold ml-3 shrink-0 ${
+                      <span className={`text-sm font-bold ml-4 shrink-0 px-2 py-1 rounded-md bg-black/20 ${
                         tx.direction === 'income' ? 'text-emerald-400' : 'text-red-400'
                       }`}>
                         {tx.direction === 'income' ? '+' : '-'}{fmt(tx.amount)}
@@ -283,26 +286,27 @@ export default function Dashboard() {
           </div>
 
           {/* AI Insight */}
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-white text-sm font-semibold flex items-center gap-2">
-                <Sparkles size={16} className="text-violet-400" />
-                AI Yorumu
+          <div className="glass-panel rounded-2xl p-6 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-violet-600/10 rounded-full blur-3xl -z-10 animate-pulse" />
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-fuchsia-400 text-sm font-bold tracking-wide uppercase flex items-center gap-2">
+                <Sparkles size={18} className="text-violet-400" />
+                AI Finansal Analiz
               </h2>
               <button
                 onClick={() => handleGenerateInsight(!!insight)}
                 disabled={insightLoading}
-                className="flex items-center gap-1.5 text-xs text-violet-400 hover:text-violet-300 disabled:opacity-50 transition-colors"
+                className="flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-lg bg-violet-600/20 text-violet-300 hover:bg-violet-600/40 hover:text-white disabled:opacity-50 transition-all"
               >
-                <RefreshCw size={12} className={insightLoading ? 'animate-spin' : ''} />
+                <RefreshCw size={14} className={insightLoading ? 'animate-spin' : ''} />
                 {insightLoading ? 'Üretiliyor...' : insight ? 'Yenile' : 'Yorum Üret'}
               </button>
             </div>
             {insight ? (
-              <p className="text-gray-300 text-sm leading-relaxed">{insight.insight_text}</p>
+              <p className="text-gray-200 text-[15px] leading-relaxed relative z-10 font-medium">{insight.insight_text}</p>
             ) : (
-              <p className="text-gray-500 text-sm">
-                "Yorum Üret" butonuna tıklayarak bu aya özel AI yorumu alabilirsiniz.
+              <p className="text-gray-500 text-sm relative z-10">
+                "Yorum Üret" butonuna tıklayarak bu aya özel AI analizini başlatın.
               </p>
             )}
           </div>

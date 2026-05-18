@@ -118,14 +118,14 @@ export default function Chat() {
   return (
     <div className="flex flex-col h-screen">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 bg-gray-900/80 backdrop-blur-sm shrink-0">
-        <div className="flex items-center gap-2">
-          <div className="p-1.5 rounded-lg bg-violet-500/20">
-            <Sparkles size={16} className="text-violet-400" />
+      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800/50 glass shrink-0 z-10 relative">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-xl bg-gradient-to-br from-violet-500/20 to-fuchsia-500/20 border border-violet-500/20 shadow-[0_0_15px_rgba(139,92,246,0.15)]">
+            <Sparkles size={18} className="text-violet-400" />
           </div>
           <div>
-            <h1 className="text-white font-semibold">Aliyda Chatbot</h1>
-            <p className="text-gray-500 text-xs">Doğrulanmış verilerinize göre cevaplar</p>
+            <h1 className="text-white font-bold tracking-wide">Aliyda Chatbot</h1>
+            <p className="text-gray-400 text-xs mt-0.5 tracking-wider uppercase font-medium">Doğrulanmış veriler</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -142,7 +142,7 @@ export default function Chat() {
               title="Yeni sohbet"
               className="p-1.5 text-gray-500 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
             >
-              <RefreshCw size={15} />
+              <RefreshCw size={15} className="group-hover:rotate-180 transition-transform duration-500" />
             </button>
           )}
         </div>
@@ -152,21 +152,21 @@ export default function Chat() {
       <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full pb-8">
-            <div className="p-4 rounded-2xl bg-violet-500/10 border border-violet-500/20 mb-4">
-              <Sparkles size={28} className="text-violet-400" />
+            <div className="p-5 rounded-3xl glass-panel mb-5 animate-float shadow-[0_0_30px_rgba(139,92,246,0.15)]">
+              <Sparkles size={32} className="text-violet-400 drop-shadow-md" />
             </div>
-            <h2 className="text-white font-semibold mb-1">Nasıl yardımcı olabilirim?</h2>
-            <p className="text-gray-500 text-sm mb-6 text-center max-w-sm">
+            <h2 className="text-2xl font-bold bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent mb-2">Nasıl yardımcı olabilirim?</h2>
+            <p className="text-gray-400 text-sm mb-8 text-center max-w-sm leading-relaxed">
               {month} ayına ait doğrulanmış finansal verilerinize göre cevap veririm.
             </p>
-            <div className="grid grid-cols-1 gap-2 w-full max-w-sm">
+            <div className="grid grid-cols-1 gap-3 w-full max-w-sm">
               {SUGGESTIONS.map(s => (
                 <button
                   key={s.text}
                   onClick={() => sendMessage(s.text)}
-                  className="flex items-center gap-3 bg-gray-800 hover:bg-gray-700 border border-gray-700 hover:border-violet-500/50 text-gray-300 text-sm px-4 py-3 rounded-xl transition-all text-left"
+                  className="flex items-center gap-4 glass hover:bg-white/5 border border-white/5 hover:border-violet-500/30 text-gray-300 text-sm px-5 py-3.5 rounded-2xl transition-all duration-300 text-left hover-glow group"
                 >
-                  <span className="text-base">{s.emoji}</span>
+                  <span className="text-lg group-hover:scale-110 transition-transform">{s.emoji}</span>
                   {s.text}
                 </button>
               ))}
@@ -202,22 +202,22 @@ export default function Chat() {
       )}
 
       {/* Input */}
-      <div className="px-6 pb-6 pt-2 shrink-0">
-        <div className="flex gap-3 bg-gray-800 border border-gray-700 rounded-2xl p-2 focus-within:border-violet-500 transition-colors">
+      <div className="px-6 pb-6 pt-2 shrink-0 bg-transparent relative z-10">
+        <div className="flex gap-3 glass-panel rounded-2xl p-2.5 shadow-lg focus-within:shadow-[0_0_20px_rgba(139,92,246,0.2)] focus-within:border-violet-500/50 transition-all duration-300">
           <input
             ref={inputRef}
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage(input)}
             placeholder={`${month} ayı için bir şey sor...`}
-            className="flex-1 bg-transparent text-white text-sm px-2 py-1 focus:outline-none placeholder-gray-500"
+            className="flex-1 bg-transparent text-white text-[15px] px-3 py-1 focus:outline-none placeholder-gray-500"
           />
           <button
             onClick={() => sendMessage(input)}
             disabled={loading || !input.trim()}
-            className="bg-violet-600 hover:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed text-white px-4 py-2 rounded-xl transition-colors flex items-center gap-1.5 text-sm font-medium"
+            className="bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white px-5 py-2.5 rounded-xl transition-all shadow-md flex items-center gap-2 text-sm font-semibold"
           >
-            <Send size={15} />
+            <Send size={16} />
           </button>
         </div>
         <p className="text-center text-xs text-gray-600 mt-2">
