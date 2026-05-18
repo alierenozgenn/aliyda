@@ -11,8 +11,10 @@ from app.services.monthly_profile_service import MonthlyProfileService
 
 router = APIRouter()
 
+
 def get_summary_service(db: Client = Depends(get_db_client)) -> SummaryService:
     return SummaryService(db)
+
 
 def get_profile_service(db: Client = Depends(get_db_client)) -> MonthlyProfileService:
     return MonthlyProfileService(db)
@@ -22,15 +24,13 @@ def get_profile_service(db: Client = Depends(get_db_client)) -> MonthlyProfileSe
 async def get_dashboard(
     month: str = Query(..., description="Format: YYYY-MM"),
     user_id: str = Depends(get_current_user_id),
-    sum_service: SummaryService = Depends(get_summary_service)
+    sum_service: SummaryService = Depends(get_summary_service),
 ):
     try:
         sum_service.ensure_summary_fresh(user_id, month)
-        dashboard_data = sum_service.get_monthly_dashboard(month)
-
+        dashboard_data = sum_service.get_monthly_dashboard(user_id, month)
         if not dashboard_data:
             return success_response(data=None, message="Bu ay için henüz veri yok.")
-
         return success_response(data=dashboard_data)
     except Exception as e:
         return error_response(code="DASHBOARD_ERROR", message=str(e))
@@ -42,10 +42,10 @@ async def upsert_monthly_profile(
     data: MonthlyProfileUpsert,
     user_id: str = Depends(get_current_user_id),
     profile_service: MonthlyProfileService = Depends(get_profile_service),
-    sum_service: SummaryService = Depends(get_summary_service)
+    sum_service: SummaryService = Depends(get_summary_service),
 ):
     try:
-        data.month = month  # enforce path param
+        data.month = month
         profile_id = profile_service.upsert_monthly_profile(user_id=user_id, data=data)
         sum_service.recalculate_monthly_summary(user_id, month)
         return success_response(data=profile_id, message="Aylık profil güncellendi.")

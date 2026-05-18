@@ -1,49 +1,44 @@
 from supabase import Client
 from typing import List, Dict, Any
 
+
 class StatementService:
     def __init__(self, db: Client):
         self.db = db
 
-    def create_statement(self, account_id: str, month: str, file_name: str = None, file_size_bytes: int = None) -> str:
-        """
-        Calls create_statement RPC.
-        RPC signature: (p_account_id, p_month, p_source, p_file_name, p_file_mime_type, p_file_size_bytes)
-        auth.uid() is resolved inside the DB function.
-        """
-        response = self.db.rpc(
-            "create_statement",
-            {
-                "p_account_id": account_id,
-                "p_month": month,
-                "p_source": "pdf",
-                "p_file_name": file_name,
-                "p_file_mime_type": "application/pdf",
-                "p_file_size_bytes": file_size_bytes,
-            }
-        ).execute()
-        return response.data  # returns UUID string
+    def create_statement(self, user_id: str, account_id: str, month: str, file_name: str = None, file_size_bytes: int = None) -> str:
+        """Direct insert - bypasses auth.uid() issue with service role."""
+        response = (
+            self.db.table("statements")
+            .insert({
+                "user_id": user_id,
+                "account_id": account_id,
+                "month": month,
+                "source": "pdf",
+                "file_name": file_name,
+                "file_mime_type": "application/pdf",
+                "file_size_bytes": file_size_bytes,
+                "status": "uploaded",
+            })
+            .execute()
+        )
+        return response.data[0]["id"]
 
     def update_statement_status(self, statement_id: str, status: str, error_message: str = None) -> bool:
-        """
-        Calls update_statement_status RPC.
-        """
-        self.db.rpc(
-            "update_statement_status",
-            {
-                "p_statement_id": statement_id,
-                "p_status": status,
-                "p_error_message": error_message,
-            }
-        ).execute()
+        update = {"status": status}
+        if error_message:
+            update["error_message"] = error_message[:500]
+        self.db.table("statements").update(update).eq("id", statement_id).execute()
         return True
 
-    def list_statements_by_month(self, month: str) -> List[Dict[str, Any]]:
+    def list_statements_by_month(self, user_id: str, month: str) -> List[Dict[str, Any]]:
         response = (
             self.db.table("statements")
             .select("*")
+            .eq("user_id", user_id)
             .eq("month", month)
             .eq("is_deleted", False)
+            .order("created_at", desc=True)
             .execute()
         )
         return response.data
@@ -53,11 +48,9 @@ class StatementService:
         return response.data
 
     def soft_delete_statement(self, statement_id: str, reason: str = "User deleted") -> bool:
-        self.db.rpc(
-            "soft_delete_statement",
-            {
-                "p_statement_id": statement_id,
-                "p_reason": reason,
-            }
-        ).execute()
+        self.db.table("statements").update({
+            "is_deleted": True,
+            "deleted_at": "now()",
+            "deleted_reason": reason,
+        }).eq("id", statement_id).execute()
         return True

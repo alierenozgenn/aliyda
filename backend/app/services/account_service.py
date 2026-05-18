@@ -1,35 +1,33 @@
 from supabase import Client
 from typing import List, Dict, Any
 
+
 class AccountService:
     def __init__(self, db: Client):
-        # db must be a USER-SCOPED client (anon key + user JWT)
-        # so that auth.uid() works inside the DB function
         self.db = db
 
     def create_account(
         self,
+        user_id: str,
         name: str,
         account_type: str = "bank",
         institution_name: str = None,
         currency: str = "TRY",
     ) -> Dict[str, Any]:
-        """
-        Calls create_user_account(p_name, p_institution_name, p_account_type, p_currency).
-        auth.uid() is resolved inside the DB function — client MUST be user-scoped.
-        """
-        response = self.db.rpc(
-            "create_user_account",
-            {
-                "p_name": name,
-                "p_institution_name": institution_name,
-                "p_account_type": account_type,
-                "p_currency": currency,
-            }
-        ).execute()
-
-        account_id = response.data  # UUID string
-        return self.get_account(account_id)
+        """Direct insert with user_id — works with service role client."""
+        response = (
+            self.db.table("accounts")
+            .insert({
+                "user_id": user_id,
+                "name": name,
+                "account_type": account_type,
+                "institution_name": institution_name,
+                "currency": currency,
+                "is_active": True,
+            })
+            .execute()
+        )
+        return response.data[0]
 
     def get_account(self, account_id: str) -> Dict[str, Any]:
         response = (
@@ -41,11 +39,11 @@ class AccountService:
         )
         return response.data
 
-    def list_accounts(self) -> List[Dict[str, Any]]:
-        """RLS automatically scopes results to auth.uid() user."""
+    def list_accounts(self, user_id: str) -> List[Dict[str, Any]]:
         response = (
             self.db.table("accounts")
             .select("*")
+            .eq("user_id", user_id)
             .eq("is_active", True)
             .order("created_at", desc=False)
             .execute()
@@ -54,6 +52,7 @@ class AccountService:
 
     def update_account(
         self,
+        user_id: str,
         account_id: str,
         name: str = None,
         account_type: str = None,
@@ -71,10 +70,10 @@ class AccountService:
             update_data["currency"] = currency
 
         if update_data:
-            self.db.table("accounts").update(update_data).eq("id", account_id).execute()
+            self.db.table("accounts").update(update_data).eq("id", account_id).eq("user_id", user_id).execute()
 
         return self.get_account(account_id)
 
-    def archive_account(self, account_id: str) -> bool:
-        self.db.table("accounts").update({"is_active": False}).eq("id", account_id).execute()
+    def archive_account(self, user_id: str, account_id: str) -> bool:
+        self.db.table("accounts").update({"is_active": False}).eq("id", account_id).eq("user_id", user_id).execute()
         return True

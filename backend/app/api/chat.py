@@ -91,10 +91,10 @@ async def send_chat_message(
         # 2. Build SMART context from DB — only relevant fields for this question
         #    This replaces sending all data to Gemini every time (Adım 43)
         if data.month:
-            # Ensure summary is fresh before building context
             sum_service.ensure_summary_fresh(user_id, data.month)
         
         context = context_service.build_context(
+            user_id=user_id,
             question=data.message,
             month=data.month,
         )

@@ -10,8 +10,8 @@ from app.services.account_service import AccountService
 
 router = APIRouter()
 
-# Valid account types from DB check constraint
 VALID_ACCOUNT_TYPES = ("bank", "credit_card", "cash", "manual", "wallet", "other")
+
 
 class AccountCreateRequest(BaseModel):
     name: str
@@ -19,14 +19,15 @@ class AccountCreateRequest(BaseModel):
     institution_name: Optional[str] = None
     currency: str = "TRY"
 
+
 class AccountUpdateRequest(BaseModel):
     name: Optional[str] = None
     account_type: Optional[str] = None
     institution_name: Optional[str] = None
     currency: Optional[str] = None
 
+
 def get_account_service(db: Client = Depends(get_db_client)) -> AccountService:
-    # get_db_client returns user-scoped client — correct for auth.uid() to work
     return AccountService(db)
 
 
@@ -43,6 +44,7 @@ async def create_account(
         )
     try:
         account = service.create_account(
+            user_id=user_id,
             name=data.name,
             account_type=data.account_type,
             institution_name=data.institution_name or None,
@@ -59,7 +61,7 @@ async def list_accounts(
     service: AccountService = Depends(get_account_service),
 ):
     try:
-        accounts = service.list_accounts()
+        accounts = service.list_accounts(user_id=user_id)
         return success_response(data=accounts)
     except Exception as e:
         return error_response(code="ACCOUNT_LIST_ERROR", message=str(e))
@@ -79,6 +81,7 @@ async def update_account(
         )
     try:
         account = service.update_account(
+            user_id=user_id,
             account_id=account_id,
             name=data.name,
             account_type=data.account_type,
@@ -97,7 +100,7 @@ async def archive_account(
     service: AccountService = Depends(get_account_service),
 ):
     try:
-        service.archive_account(account_id)
+        service.archive_account(user_id=user_id, account_id=account_id)
         return success_response(data=account_id, message="Hesap devre dışı bırakıldı.")
     except Exception as e:
         return error_response(code="ACCOUNT_ARCHIVE_ERROR", message=str(e))

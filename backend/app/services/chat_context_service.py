@@ -13,7 +13,7 @@ class ChatContextService:
     def __init__(self, db: Client):
         self.db = db
 
-    def build_context(self, question: str, month: Optional[str]) -> Dict[str, Any]:
+    def build_context(self, user_id: str, question: str, month: Optional[str]) -> Dict[str, Any]:
         """
         Soruyu analiz ederek ilgili context'i seçer.
         Gemini bu context üzerinden cevap üretir.
@@ -27,7 +27,7 @@ class ChatContextService:
             return context
 
         # 1. Aylık özet (neredeyse her soru için gerekli)
-        summary = self._get_monthly_summary(month)
+        summary = self._get_monthly_summary(user_id, month)
 
         if not summary:
             context["note"] = "Bu ay için henüz doğrulanmış veri yok."
@@ -76,7 +76,7 @@ class ChatContextService:
             }
 
         # Monthly profile (hedefler)
-        profile = self._get_monthly_profile(month)
+        profile = self._get_monthly_profile(user_id, month)
         if profile:
             context["goals"] = {
                 "savings_goal": profile.get("savings_goal"),
@@ -85,11 +85,12 @@ class ChatContextService:
 
         return context
 
-    def _get_monthly_summary(self, month: str) -> Optional[Dict[str, Any]]:
+    def _get_monthly_summary(self, user_id: str, month: str) -> Optional[Dict[str, Any]]:
         try:
             res = (
                 self.db.table("monthly_summaries")
                 .select("*")
+                .eq("user_id", user_id)
                 .eq("month", month)
                 .execute()
             )
@@ -97,11 +98,12 @@ class ChatContextService:
         except Exception:
             return None
 
-    def _get_monthly_profile(self, month: str) -> Optional[Dict[str, Any]]:
+    def _get_monthly_profile(self, user_id: str, month: str) -> Optional[Dict[str, Any]]:
         try:
             res = (
                 self.db.table("monthly_profiles")
                 .select("*")
+                .eq("user_id", user_id)
                 .eq("month", month)
                 .execute()
             )

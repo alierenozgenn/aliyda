@@ -50,6 +50,7 @@ async def upload_statement(
 
         # 2. Create statement record
         statement_id = stmt_service.create_statement(
+            user_id=user_id,
             account_id=account_id,
             month=month,
             file_name=file.filename,
@@ -74,11 +75,12 @@ async def upload_statement(
         transactions = extracted_data.get("transactions", [])
         logger.info(f"Gemini {len(transactions)} işlem çıkardı.")
 
+        from app.core.config import settings
         # 6. Save raw extraction log
         ext_service.save_statement_extraction(
             statement_id=statement_id,
             provider="gemini",
-            model="gemini-2.0-flash",
+            model=settings.GEMINI_MODEL_EXTRACTION,
             raw_output=str(extracted_data)[:4000],
             parsed_output=extracted_data,
         )
@@ -131,7 +133,7 @@ async def list_statements(
     stmt_service: StatementService = Depends(get_statement_service),
 ):
     try:
-        statements = stmt_service.list_statements_by_month(month)
+        statements = stmt_service.list_statements_by_month(user_id=user_id, month=month)
         return success_response(data=statements)
     except Exception as e:
         return error_response(code="STATEMENT_LIST_ERROR", message=str(e))
@@ -144,7 +146,7 @@ async def list_drafts(
     draft_service: DraftService = Depends(get_draft_service),
 ):
     try:
-        drafts = draft_service.list_pending_drafts(statement_id)
+        drafts = draft_service.list_pending_drafts(user_id=user_id, statement_id=statement_id)
         return success_response(data=drafts)
     except Exception as e:
         return error_response(code="DRAFT_LIST_ERROR", message=str(e))
@@ -158,7 +160,7 @@ async def finalize_statement(
     draft_service: DraftService = Depends(get_draft_service),
 ):
     try:
-        pending = draft_service.list_pending_drafts(statement_id)
+        pending = draft_service.list_pending_drafts(user_id=user_id, statement_id=statement_id)
         if pending:
             return error_response(
                 code="STATEMENT_HAS_PENDING",
