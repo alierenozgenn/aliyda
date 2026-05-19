@@ -1,58 +1,69 @@
 from app.core.config import settings
 from google import genai
 from google.genai import types
-from typing import List, Dict, Any
+from typing import Any, Dict, Optional
 import json
-import time
 import logging
+import os
+import time
 
 logger = logging.getLogger(__name__)
 
-client = genai.Client(api_key=settings.GEMINI_API_KEY)
+PROMPT_VERSION = "v3.1"
+GEMINI_MODEL = "gemini-3.1-flash-lite"
+MAX_RETRIES = 2
+RETRY_DELAYS = [2]
+FILE_READY_TIMEOUT_SECONDS = 30
+FILE_READY_POLL_SECONDS = 1
 
-PROMPT_VERSION = "v2.0"
 
 PDF_EXTRACTION_PROMPT = """
-Sen bir banka ekstresi analiz yapay zekasısın. Sana verilen PDF banka ekstresi belgesini incele.
+Sen bir banka ekstresi veri çıkarma motorusun. Görevin SADECE PDF'de yazan işlem verilerini JSON olarak çıkarmaktır.
 
-Görevin SADECE veri çıkarmaktır. Yorum yapma, özet yazma, hesaplama yapma.
+Kesin kurallar:
+1. Yanıt SADECE geçerli JSON olsun. Markdown, açıklama, ```json bloğu veya yorum ekleme.
+2. Finans matematiği yapma, toplam/özet hesaplama, tahmin yürütme. Sadece PDF'de gördüğün satırları çıkar.
+3. Tutar her zaman pozitif sayı olsun. İşlemin yönünü direction alanı belirler.
+4. direction yalnızca şu değerlerden biri olsun: expense, income, transfer_in, transfer_out.
+5. Tarih YYYY-MM-DD formatında olsun. Saat bilinmiyorsa null olsun.
+6. Para birimi bilinmiyorsa TRY kullan.
+7. Güven skoru confidence 0.0 ile 1.0 arasında olsun.
+8. Emin olmadığın alanları null bırak ve warnings listesine kısa not ekle.
 
-Aşağıdaki kurallara kesinlikle uy:
-1. Tüm işlemleri JSON array içinde döndür.
-2. Yanıtın SADECE JSON olsun. Başına veya sonuna hiçbir şey ekleme (markdown, açıklama yok).
-3. "direction" alanı yalnızca şu değerlerden biri olabilir: "income", "expense", "transfer"
-4. Para birimi bilinmiyorsa "TRY" kullan.
-5. Tarih formatı: "YYYY-MM-DD"
-6. Saat formatı: "HH:MM" (bilinmiyorsa null)
-7. Tutar her zaman pozitif sayı olmalı. Yönü "direction" belirler.
-8. Gemini olarak hiçbir hesaplama yapma. Sadece PDF'de yazan rakamları yaz.
-9. Güven skoru (confidence): 0.0-1.0 arasında, eğer tarih/tutar belirsizse düşük ver.
-
-Döndürülecek format:
+Döndürülecek JSON şeması:
 {
-  "statement_month": "YYYY-MM",
+  "statement_period": "YYYY-MM veya null",
+  "month": "YYYY-MM veya null",
+  "bank_name": "Banka adı veya null",
+  "account_hint": "Hesap/kart ipucu veya null",
   "income_detected": true,
+  "warnings": [],
   "transactions": [
     {
-      "transaction_date": "YYYY-MM-DD",
-      "transaction_time": "HH:MM",
+      "date": "YYYY-MM-DD",
+      "time": "HH:MM veya null",
       "description": "Kısa anlaşılır açıklama",
-      "original_description": "PDF'deki orijinal metin olduğu gibi",
+      "original_description": "PDF'deki açıklama/metin",
       "amount": 250.00,
-      "currency": "TRY",
       "direction": "expense",
-      "category": "Market",
-      "subcategory": null,
-      "counterparty": "Migros",
+      "currency": "TRY",
+      "counterparty": "Karşı taraf veya null",
+      "category_hint": "Kategori önerisi veya null",
       "confidence": 0.95,
-      "raw_text": "PDF'deki o satır tam olarak"
+      "raw_text": "İşlem satırının ham metni veya null",
+      "source_line": "Varsa kaynak satır veya null"
     }
-  ],
-  "warnings": []
+  ]
 }
 
-Kategori önerileri (gerekirse kullan):
-- Market, Restoran/Kafe, Ulaşım, Faturalar, Eğlence, Sağlık, Giyim, Eğitim, Kira, Maaş, Diğer Gelir, Transfer, Diğer
+Kategori önerileri gerekiyorsa şunlardan seç:
+Market, Restoran/Kafe, Ulaşım, Faturalar, Eğlence, Sağlık, Giyim, Eğitim, Kira, Maaş, Diğer Gelir, Transfer, Diğer
+"""
+
+PDF_SUMMARY_PROMPT = """
+Bu PDF dosyasını Türkçe özetle.
+Kısa, açık ve kullanıcının anlayacağı dilde yaz.
+Finans matematiği yapma; sadece PDF'de açıkça görünen bilgileri özetle.
 """
 
 INSIGHT_PROMPT_TEMPLATE = """
@@ -84,123 +95,125 @@ Sen Aliyda, bir kişisel bütçe ve finans asistanısın.
 Eğer sana sorulan şeyin cevabı veride yoksa: "Bu konuda elimde yeterli veri yok, işlem eklemeyi veya PDF yüklemeyi deneyin." de.
 """
 
-# ─── Retry helper ───────────────────────────────
-MAX_RETRIES = 3
-RETRY_DELAYS = [5, 15, 30]  # seconds
+
+class GeminiConfigurationError(RuntimeError):
+    pass
 
 
-def _call_gemini_with_retry(model: str, contents, config) -> str:
-    """
-    Gemini API çağrısını retry mekanizmasıyla yapar.
-    503 (server overload) ve 429 (rate limit) hatalarında otomatik bekler ve tekrar dener.
-    """
-    last_error = None
-    for attempt in range(MAX_RETRIES):
-        try:
-            response = client.models.generate_content(
-                model=model,
-                contents=contents,
-                config=config,
-            )
-            return response.text.strip()
-        except Exception as e:
-            error_str = str(e)
-            last_error = e
+class GeminiAnalysisError(RuntimeError):
+    pass
 
-            # Retryable hatalar: 503 (overload), 429 (rate limit)
-            is_retryable = any(code in error_str for code in ["503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED"])
 
-            if is_retryable and attempt < MAX_RETRIES - 1:
-                delay = RETRY_DELAYS[attempt]
-                logger.warning(
-                    f"Gemini gecici hata (deneme {attempt + 1}/{MAX_RETRIES}): {error_str[:100]}. "
-                    f"{delay}s sonra tekrar denenecek..."
-                )
-                time.sleep(delay)
-            else:
-                break
+def _is_retryable_error(error: Exception) -> bool:
+    error_str = str(error)
+    return any(
+        code in error_str
+        for code in ["503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED", "timeout", "Timeout"]
+    )
 
-    raise last_error
+
+def _clean_json_text(text: str) -> str:
+    cleaned = (text or "").strip()
+    if cleaned.startswith("```json"):
+        cleaned = cleaned[7:].strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned[3:].strip()
+    if cleaned.endswith("```"):
+        cleaned = cleaned[:-3].strip()
+    return cleaned
+
+
+def _file_state_name(file_obj: Any) -> str:
+    state = getattr(file_obj, "state", None)
+    if state is None:
+        return ""
+    return str(getattr(state, "name", state)).upper()
+
+
+def _safe_error_detail(error: Exception, max_length: int = 350) -> str:
+    detail = str(error) or error.__class__.__name__
+    api_key = settings.google_api_key
+    if api_key:
+        detail = detail.replace(api_key, "[REDACTED_API_KEY]")
+    detail = " ".join(detail.split())
+    return detail[:max_length]
 
 
 class GeminiService:
     def __init__(self):
-        self.extraction_model = settings.GEMINI_MODEL_EXTRACTION
-        self.chat_model = settings.GEMINI_MODEL_CHAT
+        api_key = settings.google_api_key
+        if not api_key:
+            raise GeminiConfigurationError(
+                "Google AI API anahtarı eksik. Backend .env içine GOOGLE_API_KEY veya GEMINI_API_KEY ekleyin."
+            )
 
-    def extract_transactions_from_pdf(self, file_path: str) -> Dict[str, Any]:
-        """
-        PDF dosyasından işlemleri JSON olarak çıkarır.
-        Roadmap kuralı: 1 PDF = 1 Gemini isteği.
-        Gemini hiçbir hesaplama yapmaz, sadece veri çıkarır.
-        503/429 hatalarında otomatik retry yapar.
-        """
-        with open(file_path, "rb") as f:
-            pdf_bytes = f.read()
+        self.client = genai.Client(api_key=api_key)
+        self.model = GEMINI_MODEL
+        self.extraction_model = GEMINI_MODEL
+        self.chat_model = GEMINI_MODEL
 
-        logger.info(f"Gemini extraction baslatiliyor: model={self.extraction_model}, pdf_size={len(pdf_bytes)}")
+    def analyze_pdf_summary(self, pdf_path: str) -> str:
+        uploaded_file = None
+        try:
+            uploaded_file = self._upload_pdf(pdf_path)
+            uploaded_file = self._wait_until_file_ready(uploaded_file)
 
-        text = _call_gemini_with_retry(
-            model=self.extraction_model,
-            contents=[
-                types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
-                types.Part.from_text(text=PDF_EXTRACTION_PROMPT)
-            ],
-            config=types.GenerateContentConfig(
-                temperature=0.1,  # Low temperature for factual extraction
+            response_text = self._generate_text(
+                contents=[uploaded_file, PDF_SUMMARY_PROMPT],
+                temperature=0.2,
+            )
+            if not response_text:
+                raise GeminiAnalysisError("Gemini PDF özetleme için boş yanıt döndürdü.")
+            return response_text
+        except GeminiConfigurationError:
+            raise
+        except Exception as e:
+            logger.error("Gemini PDF summary hatasi: %s", e, exc_info=True)
+            raise GeminiAnalysisError("PDF Google AI ile özetlenemedi. Lütfen birazdan tekrar deneyin.") from e
+        finally:
+            self._delete_uploaded_file(uploaded_file)
+
+    def summarize_pdf_file(self, file_path: str) -> str:
+        return self.analyze_pdf_summary(file_path)
+
+    def extract_transactions_from_pdf(
+        self,
+        pdf_path: str,
+        statement_context: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        uploaded_file = None
+        try:
+            uploaded_file = self._upload_pdf(pdf_path)
+            uploaded_file = self._wait_until_file_ready(uploaded_file)
+
+            prompt = self._build_extraction_prompt(statement_context)
+            text = self._generate_text(
+                contents=[uploaded_file, prompt],
+                temperature=0.1,
                 response_mime_type="application/json",
             )
-        )
-
-        # Defensive cleanup in case model wraps in markdown
-        if text.startswith("```json"):
-            text = text[7:]
-        if text.startswith("```"):
-            text = text[3:]
-        if text.endswith("```"):
-            text = text[:-3]
-
-        try:
-            result = json.loads(text.strip())
-            # Basic validation
-            if "transactions" not in result:
-                result["transactions"] = []
-            if "income_detected" not in result:
-                result["income_detected"] = any(
-                    t.get("direction") == "income" for t in result["transactions"]
-                )
-            logger.info(f"Gemini extraction basarili: {len(result['transactions'])} islem cikarildi")
-            return result
-        except json.JSONDecodeError as e:
-            raise ValueError(
-                f"Gemini gecerli JSON dondurmedi: {str(e)}\n"
-                f"Ham cikti (ilk 500 karakter): {text[:500]}"
-            )
+            return self._parse_and_normalize_extraction(text)
+        except GeminiConfigurationError:
+            raise
+        except GeminiAnalysisError:
+            raise
+        except Exception as e:
+            logger.error("Gemini PDF extraction hatasi: %s", e, exc_info=True)
+            raise GeminiAnalysisError("PDF Google AI ile analiz edilemedi. Lütfen birazdan tekrar deneyin.") from e
+        finally:
+            self._delete_uploaded_file(uploaded_file)
 
     def generate_monthly_insight(self, dashboard_data: Dict[str, Any]) -> str:
-        """
-        Aylık özet verisine göre doğal dil yorumu üretir.
-        Kaynak: Supabase'deki deterministik hesaplanmış veriler.
-        Gemini hesaplama yapmaz, sadece yorumlar.
-        """
         month = dashboard_data.get("month", "")
         data_str = json.dumps(dashboard_data, indent=2, ensure_ascii=False)
-
         prompt = INSIGHT_PROMPT_TEMPLATE.format(month=month, data=data_str)
 
-        return _call_gemini_with_retry(
-            model=self.chat_model,
+        return self._generate_text(
             contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.7,
-            )
+            temperature=0.7,
         )
 
     def answer_chat_question(self, question: str, context: Dict[str, Any]) -> str:
-        """
-        Kullanıcının sorusunu YALNIZCA Supabase'den gelen doğrulanmış bağlam verisine
-        dayanarak yanıtlar. Gemini asla kendi başına finansal hesap yapmaz.
-        """
         context_str = json.dumps(context, indent=2, ensure_ascii=False)
 
         full_prompt = f"""{CHAT_SYSTEM_PROMPT}
@@ -212,10 +225,160 @@ Kullanıcı sorusu: {question}
 
 Cevabın:"""
 
-        return _call_gemini_with_retry(
-            model=self.chat_model,
+        return self._generate_text(
             contents=full_prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.5,
-            )
+            temperature=0.5,
         )
+
+    def _upload_pdf(self, pdf_path: str) -> Any:
+        try:
+            logger.info("Google Files upload baslatiliyor: model=%s file=%s", self.model, pdf_path)
+            return self.client.files.upload(
+                file=pdf_path,
+                config=types.UploadFileConfig(
+                    mime_type="application/pdf",
+                    display_name=os.path.basename(pdf_path),
+                ),
+            )
+        except Exception as e:
+            logger.error("Google Files upload hatasi: %s", e, exc_info=True)
+            raise GeminiAnalysisError(
+                f"PDF Google AI servisine yüklenemedi: {_safe_error_detail(e)}"
+            ) from e
+
+    def _wait_until_file_ready(self, uploaded_file: Any) -> Any:
+        file_name = getattr(uploaded_file, "name", None)
+        if not file_name:
+            return uploaded_file
+
+        deadline = time.monotonic() + FILE_READY_TIMEOUT_SECONDS
+        current_file = uploaded_file
+
+        while time.monotonic() < deadline:
+            state_name = _file_state_name(current_file)
+            if not state_name or "ACTIVE" in state_name or "READY" in state_name:
+                return current_file
+            if "FAILED" in state_name:
+                raise GeminiAnalysisError("Google AI yüklenen PDF dosyasını işleyemedi.")
+
+            logger.info("Google Files PDF hazirlanıyor: name=%s state=%s", file_name, state_name)
+            time.sleep(FILE_READY_POLL_SECONDS)
+            try:
+                current_file = self.client.files.get(name=file_name)
+            except Exception as e:
+                logger.warning("Google Files state okunamadi, mevcut referans kullanilacak: %s", e)
+                return uploaded_file
+
+        raise GeminiAnalysisError("Google AI PDF dosyasını zamanında hazır hale getiremedi.")
+
+    def _delete_uploaded_file(self, uploaded_file: Any) -> None:
+        file_name = getattr(uploaded_file, "name", None) if uploaded_file else None
+        if not file_name:
+            return
+
+        try:
+            self.client.files.delete(name=file_name)
+            logger.info("Google Files gecici dosya silindi: %s", file_name)
+        except Exception as e:
+            logger.warning("Google Files gecici dosya silinemedi: %s", e, exc_info=True)
+
+    def _generate_text(
+        self,
+        contents: Any,
+        temperature: float,
+        response_mime_type: Optional[str] = None,
+    ) -> str:
+        config_kwargs: Dict[str, Any] = {"temperature": temperature}
+        if response_mime_type:
+            config_kwargs["response_mime_type"] = response_mime_type
+
+        last_error = None
+        for attempt in range(MAX_RETRIES):
+            try:
+                response = self.client.models.generate_content(
+                    model=self.model,
+                    contents=contents,
+                    config=types.GenerateContentConfig(**config_kwargs),
+                )
+                return (response.text or "").strip()
+            except Exception as e:
+                last_error = e
+                if _is_retryable_error(e) and attempt < MAX_RETRIES - 1:
+                    delay = RETRY_DELAYS[min(attempt, len(RETRY_DELAYS) - 1)]
+                    logger.warning(
+                        "Gemini gecici hata: model=%s attempt=%s/%s error=%s; %ss sonra tekrar denenecek",
+                        self.model,
+                        attempt + 1,
+                        MAX_RETRIES,
+                        str(e),
+                        delay,
+                    )
+                    time.sleep(delay)
+                    continue
+                break
+
+        logger.error("Gemini generate_content basarisiz: %s", last_error, exc_info=True)
+        raise GeminiAnalysisError("Google AI modeli şu anda yanıt veremedi. Lütfen birazdan tekrar deneyin.") from last_error
+
+    def _build_extraction_prompt(self, statement_context: Optional[Dict[str, Any]]) -> str:
+        if not statement_context:
+            return PDF_EXTRACTION_PROMPT
+
+        context_str = json.dumps(statement_context, ensure_ascii=False)
+        return f"""{PDF_EXTRACTION_PROMPT}
+
+Ek bağlam:
+{context_str}
+"""
+
+    def _parse_and_normalize_extraction(self, text: str) -> Dict[str, Any]:
+        cleaned = _clean_json_text(text)
+        try:
+            result = json.loads(cleaned)
+        except json.JSONDecodeError as e:
+            logger.error("Gemini gecersiz JSON dondurdu: %s raw=%s", e, cleaned[:1000], exc_info=True)
+            raise GeminiAnalysisError("Google AI geçerli JSON döndürmedi. Lütfen PDF'i tekrar deneyin.") from e
+
+        if not isinstance(result, dict):
+            raise GeminiAnalysisError("Google AI beklenen JSON nesnesini döndürmedi.")
+
+        transactions = result.get("transactions") or []
+        if not isinstance(transactions, list):
+            raise GeminiAnalysisError("Google AI transactions alanını liste olarak döndürmedi.")
+
+        normalized_transactions = [self._normalize_transaction(tx) for tx in transactions if isinstance(tx, dict)]
+        result["transactions"] = normalized_transactions
+        result["warnings"] = result.get("warnings") if isinstance(result.get("warnings"), list) else []
+        result["month"] = result.get("month") or result.get("statement_period") or result.get("statement_month")
+        result["statement_period"] = result.get("statement_period") or result.get("month")
+        result["income_detected"] = any(tx.get("direction") == "income" for tx in normalized_transactions)
+
+        logger.info("Gemini extraction basarili: %s islem cikarildi", len(normalized_transactions))
+        return result
+
+    def _normalize_transaction(self, tx: Dict[str, Any]) -> Dict[str, Any]:
+        direction = tx.get("direction") or "expense"
+        if direction == "transfer":
+            direction = "transfer_out"
+
+        confidence = tx.get("confidence", 0.8)
+        try:
+            confidence = max(0.0, min(1.0, float(confidence)))
+        except (TypeError, ValueError):
+            confidence = 0.8
+
+        return {
+            **tx,
+            "transaction_date": tx.get("transaction_date") or tx.get("date"),
+            "transaction_time": tx.get("transaction_time") or tx.get("time"),
+            "description": tx.get("description") or tx.get("original_description") or "PDF işlemi",
+            "original_description": tx.get("original_description") or tx.get("description"),
+            "amount": tx.get("amount"),
+            "currency": tx.get("currency") or "TRY",
+            "direction": direction,
+            "category": tx.get("category") or tx.get("category_hint"),
+            "subcategory": tx.get("subcategory"),
+            "counterparty": tx.get("counterparty"),
+            "confidence": confidence,
+            "raw_text": tx.get("raw_text") or tx.get("source_line"),
+        }

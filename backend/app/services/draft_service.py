@@ -1,6 +1,9 @@
 from supabase import Client
 from typing import List, Dict, Any
 from app.schemas.domain import ApproveDraftRequest
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class DraftService:
@@ -9,11 +12,14 @@ class DraftService:
 
     def create_drafts_from_extraction(
         self, user_id: str, account_id: str, statement_id: str, month: str, transactions: List[Dict[str, Any]]
-    ):
-        """Creates transaction_drafts from Gemini extraction output."""
-        for tx in transactions:
+    ) -> Dict[str, Any]:
+        """Creates transaction_drafts from Gemini extraction output and reports the real result."""
+        created_ids = []
+        errors = []
+
+        for index, tx in enumerate(transactions, start=1):
             try:
-                self.db.rpc(
+                response = self.db.rpc(
                     "create_transaction_draft",
                     {
                         "p_user_id": user_id,
@@ -30,13 +36,25 @@ class DraftService:
                         "p_category": tx.get("category"),
                         "p_subcategory": tx.get("subcategory"),
                         "p_counterparty": tx.get("counterparty"),
-                        "p_confidence_score": float(tx.get("confidence", 0.8)),
-                        "p_needs_review": True,
+                        "p_confidence": float(tx.get("confidence", 0.8)),
+                        "p_raw_item": tx,
                     }
                 ).execute()
+                if response.data:
+                    created_ids.append(response.data)
+                else:
+                    errors.append({"index": index, "message": "RPC boş sonuç döndürdü."})
             except Exception as e:
-                import logging
-                logging.getLogger(__name__).warning(f"Draft oluşturulamadı: {e}")
+                message = str(e)
+                errors.append({"index": index, "message": message})
+                logger.warning("Draft oluşturulamadı: statement=%s index=%s error=%s", statement_id, index, message)
+
+        return {
+            "created_count": len(created_ids),
+            "failed_count": len(errors),
+            "created_ids": created_ids,
+            "errors": errors,
+        }
 
     def list_pending_drafts(self, user_id: str, statement_id: str) -> List[Dict[str, Any]]:
         response = (
@@ -48,7 +66,33 @@ class DraftService:
             .order("transaction_date")
             .execute()
         )
-        return response.data
+        return [self._normalize_draft(row) for row in (response.data or [])]
+
+    def count_pending_drafts(self, user_id: str, statement_id: str) -> int:
+        response = (
+            self.db.table("transaction_drafts")
+            .select("id")
+            .eq("user_id", user_id)
+            .eq("statement_id", statement_id)
+            .eq("review_status", "pending")
+            .execute()
+        )
+        return len(response.data or [])
+
+    def count_statement_drafts(self, user_id: str, statement_id: str) -> int:
+        response = (
+            self.db.table("transaction_drafts")
+            .select("id")
+            .eq("user_id", user_id)
+            .eq("statement_id", statement_id)
+            .execute()
+        )
+        return len(response.data or [])
+
+    def _normalize_draft(self, draft: Dict[str, Any]) -> Dict[str, Any]:
+        if "confidence_score" not in draft:
+            draft["confidence_score"] = draft.get("confidence")
+        return draft
 
     def approve_draft(self, user_id: str, draft_id: str, updates: ApproveDraftRequest = None) -> Dict[str, Any]:
         # Fetch draft first
@@ -71,7 +115,7 @@ class DraftService:
                 for k, v in list(update_dict.items()):
                     if hasattr(v, "isoformat"):
                         update_dict[k] = v.isoformat()
-                self.db.table("transaction_drafts").update(update_dict).eq("id", draft_id).execute()
+                self.db.table("transaction_drafts").update(update_dict).eq("id", draft_id).eq("user_id", user_id).execute()
                 draft.update(update_dict)
 
         # Call the new p_user_id overload

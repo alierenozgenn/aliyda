@@ -4,7 +4,6 @@ Hangi adimda hata oldugunu bulur.
 """
 import os
 import sys
-import json
 import traceback
 from dotenv import load_dotenv
 
@@ -13,7 +12,7 @@ load_dotenv()
 from supabase import create_client
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_SERVICE_KEY")
 
 db = create_client(SUPABASE_URL, SUPABASE_KEY)
 
@@ -38,13 +37,6 @@ if not USER_ID:
 
 print(f"\nUser: {USER_ID}")
 print(f"Account: {ACCOUNT_ID}")
-
-# --- Simdi Gemini extraction yapalim ---
-from google import genai
-from google.genai import types
-
-api_key = os.getenv("GEMINI_API_KEY")
-client = genai.Client(api_key=api_key)
 
 PDF_PATH = "demo_ekstre.pdf"
 if not os.path.exists(PDF_PATH):
@@ -85,13 +77,14 @@ except Exception as e:
 
 print("\n=== Adim 3: Extraction log kaydet ===")
 try:
-    from app.core.config import settings
+    from app.services.gemini_service import GEMINI_MODEL
     db.rpc("save_statement_extraction", {
+        "p_user_id": USER_ID,
         "p_statement_id": STMT_ID,
         "p_provider": "gemini",
-        "p_model": settings.GEMINI_MODEL_EXTRACTION,
-        "p_prompt_version": "v2.0",
-        "p_raw_output": str(extracted)[:4000],
+        "p_model": GEMINI_MODEL,
+        "p_prompt_version": "v3.1",
+        "p_raw_output": {"text": str(extracted)[:4000]},
         "p_parsed_output": extracted,
         "p_status": "success",
         "p_error_message": None,
@@ -122,8 +115,8 @@ for i, tx in enumerate(txs):
             "p_category": tx.get("category"),
             "p_subcategory": tx.get("subcategory"),
             "p_counterparty": tx.get("counterparty"),
-            "p_confidence_score": float(tx.get("confidence", 0.8)),
-            "p_needs_review": True,
+            "p_confidence": float(tx.get("confidence", 0.8)),
+            "p_raw_item": tx,
         }).execute()
         success_count += 1
     except Exception as e:

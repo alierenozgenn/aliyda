@@ -156,14 +156,14 @@ export default function UploadPage() {
     }).catch(() => {})
   }
 
+  const loadStatements = () => {
+    getStatements(month).then(res => setStatements(res.data || [])).catch(() => {})
+  }
+
   useEffect(() => {
     loadAccounts()
     loadStatements()
   }, [month])
-
-  const loadStatements = () => {
-    getStatements(month).then(res => setStatements(res.data || [])).catch(() => {})
-  }
 
   const handleUpload = async (e) => {
     e.preventDefault()
@@ -177,7 +177,10 @@ export default function UploadPage() {
     formData.append('account_id', accountId)
     try {
       const res = await uploadStatement(formData)
-      setMessage(`✅ PDF işlendi. ${res.data?.draft_count || 0} işlem onay bekliyor.`)
+      const pendingCount = res.data?.draft_count || 0
+      const failedCount = res.data?.failed_draft_count || 0
+      const suffix = failedCount > 0 ? ` (${failedCount} işlem taslağı kaydedilemedi.)` : ''
+      setMessage(`✅ PDF işlendi. ${pendingCount} işlem onay bekliyor.${suffix}`)
       if (res.data?.income_detected === false) {
         setIncomeWarning(true)
       }
@@ -193,8 +196,18 @@ export default function UploadPage() {
 
   const loadDrafts = async (stmt) => {
     setSelectedStatement(stmt)
-    const res = await getDrafts(stmt.id)
-    setDrafts(res.data || [])
+    try {
+      const res = await getDrafts(stmt.id)
+      const list = res.data || []
+      setDrafts(list)
+      if (stmt.status === 'pending_review' && list.length === 0 && (stmt.total_draft_count || 0) === 0) {
+        setMessage('⚠ Bu PDF için işlem taslağı oluşmamış; backend loglarını ve Supabase RPC hatalarını kontrol edin.')
+      }
+    } catch (err) {
+      const msg = err.response?.data?.error?.message || 'Taslaklar getirilemedi.'
+      setMessage(`❌ ${msg}`)
+      setDrafts([])
+    }
   }
 
   const handleApprove = async (draftId) => {
@@ -352,6 +365,11 @@ export default function UploadPage() {
                   <span className={`text-xs ${STATUS_COLORS[stmt.status] || 'text-gray-500'}`}>
                     {stmt.status}
                   </span>
+                  {stmt.status === 'failed' && stmt.error_message && (
+                    <span className="text-xs text-red-400 max-w-lg truncate">
+                      {stmt.error_message}
+                    </span>
+                  )}
                 </div>
                 {stmt.status === 'pending_review' && (
                   <button
@@ -373,7 +391,11 @@ export default function UploadPage() {
           <h2 className="text-white font-semibold mb-1">İşlem Onayı</h2>
           <p className="text-gray-500 text-xs mb-4">{drafts.length} işlem onay bekliyor. Onayladıklarınız dashboard'a yansır.</p>
           {drafts.length === 0 ? (
-            <p className="text-green-400 text-sm">✅ Tüm işlemler tamamlandı.</p>
+            <p className="text-amber-400 text-sm">
+              {selectedStatement.status === 'pending_review' && (selectedStatement.total_draft_count || 0) === 0
+                ? 'İşlem taslağı oluşmamış; backend loglarını kontrol edin.'
+                : '✅ Tüm işlemler tamamlandı.'}
+            </p>
           ) : (
             <div className="space-y-2">
               {drafts.map(draft => (

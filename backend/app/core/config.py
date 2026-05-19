@@ -18,9 +18,10 @@ class Settings(BaseSettings):
     SUPABASE_JWT_SECRET: Optional[str] = None
 
     # Gemini
+    GOOGLE_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL_EXTRACTION: str = "gemini-2.5-flash"
-    GEMINI_MODEL_CHAT: str = "gemini-2.5-flash"
+    GEMINI_MODEL_EXTRACTION: str = "gemini-3.1-flash-lite"
+    GEMINI_MODEL_CHAT: str = "gemini-3.1-flash-lite"
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -32,5 +33,10 @@ class Settings(BaseSettings):
     def service_key(self) -> str:
         """Returns whichever service key variable is set."""
         return self.SUPABASE_SERVICE_ROLE_KEY or self.SUPABASE_SERVICE_KEY
+
+    @property
+    def google_api_key(self) -> str:
+        """Returns the Google AI key using the preferred or legacy env name."""
+        return self.GOOGLE_API_KEY or self.GEMINI_API_KEY
 
 settings = Settings()

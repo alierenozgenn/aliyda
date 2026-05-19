@@ -7,12 +7,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+MODEL = "gemini-3.1-flash-lite"
+
 # 1. Env kontrol
-api_key = os.getenv("GEMINI_API_KEY", "")
-print(f"[1] GEMINI_API_KEY: {'TANIMLI (' + api_key[:10] + '...)' if api_key else 'TANIMLI DEGIL!'}")
+api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY", "")
+print(f"[1] GOOGLE_API_KEY/GEMINI_API_KEY: {'TANIMLI' if api_key else 'TANIMLI DEGIL!'}")
 
 if not api_key:
-    print("HATA: .env dosyasinda GEMINI_API_KEY yok.")
+    print("HATA: .env dosyasinda GOOGLE_API_KEY veya GEMINI_API_KEY yok.")
     sys.exit(1)
 
 # 2. google-genai import testi
@@ -37,8 +39,8 @@ except Exception as e:
 print("\n[4] Basit metin testi yapiliyor...")
 try:
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents="Merhaba, 2+2 kac eder? Sadece sayiyi yaz.",
+        model=MODEL,
+        contents="Merhaba. Sadece 'OK' yaz.",
         config=types.GenerateContentConfig(temperature=0.1)
     )
     print(f"    Gemini yaniti: {response.text.strip()}")
@@ -53,7 +55,7 @@ except Exception as e:
     elif "401" in error_str or "invalid" in error_str.lower():
         print("    --> API KEY GECERSIZ!")
     elif "model" in error_str.lower() and "not found" in error_str.lower():
-        print("    --> MODEL BULUNAMADI. gemini-1.5-flash deneyin.")
+        print(f"    --> MODEL BULUNAMADI: {MODEL}")
     sys.exit(1)
 
 # 5. PDF testi
@@ -67,16 +69,15 @@ for f in os.listdir("."):
 if pdf_files:
     test_pdf = pdf_files[0]
     print(f"\n[5] PDF extraction testi: {test_pdf}")
+    uploaded_file = None
     try:
-        with open(test_pdf, "rb") as f:
-            pdf_bytes = f.read()
-        print(f"    PDF boyutu: {len(pdf_bytes)} bytes")
-        
+        print(f"    PDF boyutu: {os.path.getsize(test_pdf)} bytes")
+        uploaded_file = client.files.upload(file=test_pdf)
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model=MODEL,
             contents=[
-                types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
-                types.Part.from_text(text="Bu PDF dosyasindaki ilk 2 islemi JSON olarak listele.")
+                uploaded_file,
+                "Bu PDF dosyasindaki ilk 2 islemi JSON olarak listele."
             ],
             config=types.GenerateContentConfig(
                 temperature=0.1,
@@ -87,6 +88,13 @@ if pdf_files:
         print(f"    PDF extraction calisiyor!")
     except Exception as e:
         print(f"    PDF extraction HATASI: {e}")
+    finally:
+        if uploaded_file and getattr(uploaded_file, "name", None):
+            try:
+                client.files.delete(name=uploaded_file.name)
+                print("    Google gecici dosya silindi.")
+            except Exception as e:
+                print(f"    Google gecici dosya silinemedi: {e}")
 else:
     print("\n[5] PDF testi atlandi - test edilecek PDF bulunamadi.")
 

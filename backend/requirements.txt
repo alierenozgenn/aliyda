@@ -6,7 +6,7 @@ pydantic-settings
 python-multipart
 supabase
 PyJWT
-google-genai
+google-genai>=1.75.0
 httpx
 pytest
 pytest-asyncio

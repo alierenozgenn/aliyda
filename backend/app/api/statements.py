@@ -1,6 +1,7 @@
 import os
 import uuid
 import logging
+from fastapi.concurrency import run_in_threadpool
 from fastapi import APIRouter, Depends, Query, UploadFile, File, Form
 from typing import Dict, Any, List
 from supabase import Client
@@ -11,7 +12,7 @@ from app.schemas.base import success_response, error_response, BaseResponse
 from app.services.statement_service import StatementService
 from app.services.extraction_service import ExtractionService
 from app.services.draft_service import DraftService
-from app.services.gemini_service import GeminiService
+from app.services.gemini_service import GeminiService, GEMINI_MODEL
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -37,10 +38,11 @@ async def upload_statement(
     ext_service: ExtractionService = Depends(get_extraction_service),
     draft_service: DraftService = Depends(get_draft_service),
 ):
-    gemini_service = GeminiService()
     statement_id = None
     temp_path = ""
     try:
+        gemini_service = GeminiService()
+
         # 1. Read file
         file_content = await file.read()
         if not file_content:
@@ -59,7 +61,7 @@ async def upload_statement(
         logger.info(f"Statement kaydı oluşturuldu: {statement_id}")
 
         # 3. Mark as extracting
-        stmt_service.update_statement_status(statement_id, "extracting")
+        stmt_service.update_statement_status(user_id, statement_id, "extracting")
 
         # 4. Write temp file
         os.makedirs("temp", exist_ok=True)
@@ -71,23 +73,24 @@ async def upload_statement(
 
         # 5. Gemini extraction
         logger.info("Gemini PDF extraction başlatılıyor...")
-        extracted_data = gemini_service.extract_transactions_from_pdf(temp_path)
+        extracted_data = await run_in_threadpool(gemini_service.extract_transactions_from_pdf, temp_path)
         transactions = extracted_data.get("transactions", [])
         logger.info(f"Gemini {len(transactions)} işlem çıkardı.")
 
-        from app.core.config import settings
         # 6. Save raw extraction log
         ext_service.save_statement_extraction(
+            user_id=user_id,
             statement_id=statement_id,
             provider="gemini",
-            model=settings.GEMINI_MODEL_EXTRACTION,
-            raw_output=str(extracted_data)[:4000],
+            model=GEMINI_MODEL,
+            raw_output={"text": str(extracted_data)[:4000]},
             parsed_output=extracted_data,
         )
 
         # 7. Create drafts (pending review)
+        draft_result = {"created_count": 0, "failed_count": 0, "errors": []}
         if transactions:
-            draft_service.create_drafts_from_extraction(
+            draft_result = draft_service.create_drafts_from_extraction(
                 user_id=user_id,
                 account_id=account_id,
                 statement_id=statement_id,
@@ -95,17 +98,39 @@ async def upload_statement(
                 transactions=transactions,
             )
 
-        # 8. Mark as pending_review
-        stmt_service.update_statement_status(statement_id, "pending_review")
-        logger.info(f"PDF işlendi başarıyla. {len(transactions)} draft oluşturuldu.")
+        created_count = draft_result["created_count"]
+        failed_count = draft_result["failed_count"]
+
+        if not transactions:
+            raise Exception("Gemini PDF'den işlem çıkaramadı; draft oluşturulmadı.")
+
+        if created_count == 0:
+            first_error = draft_result["errors"][0]["message"] if draft_result["errors"] else "Bilinmeyen draft oluşturma hatası."
+            raise Exception(f"Gemini {len(transactions)} işlem çıkardı fakat hiçbir draft kaydedilemedi: {first_error}")
+
+        pending_count = draft_service.count_pending_drafts(user_id=user_id, statement_id=statement_id)
+        if pending_count <= 0:
+            raise Exception("Draft kayıtları oluşturuldu gibi görünüyor ancak pending draft bulunamadı.")
+
+        # 8. Mark as pending_review only after real pending drafts exist.
+        status_message = None
+        if failed_count:
+            status_message = f"{created_count} draft oluşturuldu, {failed_count} draft oluşturulamadı."
+        stmt_service.update_statement_status(user_id, statement_id, "pending_review", status_message)
+        logger.info(
+            "PDF işlendi. extracted=%s created=%s failed=%s pending=%s",
+            len(transactions), created_count, failed_count, pending_count,
+        )
 
         return success_response(
             data={
                 "statement_id": statement_id, 
-                "draft_count": len(transactions),
+                "draft_count": pending_count,
+                "created_draft_count": created_count,
+                "failed_draft_count": failed_count,
                 "income_detected": extracted_data.get("income_detected", False)
             },
-            message=f"PDF işlendi. {len(transactions)} işlem onayınızı bekliyor.",
+            message=f"PDF işlendi. {pending_count} işlem onayınızı bekliyor.",
         )
 
     except Exception as e:
@@ -114,7 +139,7 @@ async def upload_statement(
 
         if statement_id:
             try:
-                stmt_service.update_statement_status(statement_id, "failed", error_msg[:500])
+                stmt_service.update_statement_status(user_id, statement_id, "failed", error_msg[:500])
             except Exception as inner_e:
                 logger.error(f"Status update failed: {inner_e}")
 
@@ -166,7 +191,13 @@ async def finalize_statement(
                 code="STATEMENT_HAS_PENDING",
                 message=f"{len(pending)} işlem henüz onaylanmadı veya reddedilmedi.",
             )
-        stmt_service.update_statement_status(statement_id, "approved")
+        total_drafts = draft_service.count_statement_drafts(user_id=user_id, statement_id=statement_id)
+        if total_drafts == 0:
+            return error_response(
+                code="STATEMENT_HAS_NO_DRAFTS",
+                message="Bu PDF için işlem taslağı oluşmamış; tamamlanamaz. Backend loglarını kontrol edin.",
+            )
+        stmt_service.update_statement_status(user_id, statement_id, "approved")
         return success_response(data=statement_id, message="Statement tamamlandı.")
     except Exception as e:
         return error_response(code="STATEMENT_FINALIZE_ERROR", message=str(e))

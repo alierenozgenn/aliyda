@@ -7,8 +7,7 @@ from app.api.dependencies import get_db_client
 from app.schemas.base import success_response, error_response, BaseResponse
 from app.services.insight_service import InsightService
 from app.services.summary_service import SummaryService
-from app.services.gemini_service import GeminiService
-from app.core.config import settings
+from app.services.gemini_service import GeminiService, GEMINI_MODEL
 
 router = APIRouter()
 
@@ -53,8 +52,8 @@ async def generate_monthly_insight(
             user_id=user_id,
             month=month,
             insight_text=insight_text,
-            model_used=settings.GEMINI_MODEL_CHAT,
-            prompt_version="v2.0"
+            model_used=GEMINI_MODEL,
+            prompt_version="v3.1"
         )
 
         return success_response(data=insight, message="Yorum üretildi.")

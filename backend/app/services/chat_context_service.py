@@ -20,7 +20,7 @@ class ChatContextService:
         """
         question_lower = question.lower()
 
-        context: Dict[str, Any] = {"month": month}
+        context: Dict[str, Any] = {"month": month, "has_verified_data": False}
 
         if not month:
             context["note"] = "Ay belirtilmedi. Genel finansal bilgi sorusu."
@@ -29,9 +29,18 @@ class ChatContextService:
         # 1. Aylık özet (neredeyse her soru için gerekli)
         summary = self._get_monthly_summary(user_id, month)
 
-        if not summary:
-            context["note"] = "Bu ay için henüz doğrulanmış veri yok."
-            return context
+        if not summary or int(summary.get("transaction_count") or 0) <= 0:
+            # Summary recalculation can lag/fail. Chat must still see confirmed
+            # source-of-truth transactions instead of claiming there is no data.
+            fallback_summary = self._build_summary_from_confirmed_transactions(user_id, month)
+            if fallback_summary:
+                summary = fallback_summary
+            else:
+                context["note"] = "Bu ay için doğrulanmış işlem bulunmuyor."
+                context["transaction_count"] = 0
+                return context
+
+        context["has_verified_data"] = True
 
         # 2. Soruya göre hangi alanların ekleneceğine karar ver
         needs_categories = any(k in question_lower for k in [
@@ -110,3 +119,65 @@ class ChatContextService:
             return res.data[0] if res.data else None
         except Exception:
             return None
+
+    def _build_summary_from_confirmed_transactions(self, user_id: str, month: str) -> Optional[Dict[str, Any]]:
+        try:
+            res = (
+                self.db.table("v_confirmed_transactions")
+                .select("*")
+                .eq("user_id", user_id)
+                .eq("month", month)
+                .execute()
+            )
+            transactions = res.data or []
+        except Exception:
+            return None
+
+        if not transactions:
+            return None
+
+        total_income = 0.0
+        total_expense = 0.0
+        category_totals: Dict[str, float] = {}
+
+        for tx in transactions:
+            amount = float(tx.get("amount") or 0)
+            direction = tx.get("direction")
+            if direction == "income":
+                total_income += amount
+            elif direction in ("expense", "transfer_out", "transfer"):
+                total_expense += amount
+                category = tx.get("category") or "Diğer"
+                category_totals[category] = category_totals.get(category, 0.0) + amount
+
+        top_categories = [
+            {"category": category, "total": total}
+            for category, total in sorted(category_totals.items(), key=lambda item: item[1], reverse=True)[:10]
+        ]
+        largest_transactions = sorted(
+            [
+                {
+                    "id": tx.get("id"),
+                    "description": tx.get("description"),
+                    "amount": float(tx.get("amount") or 0),
+                    "direction": tx.get("direction"),
+                    "category": tx.get("category"),
+                    "transaction_date": tx.get("transaction_date"),
+                }
+                for tx in transactions
+            ],
+            key=lambda tx: tx["amount"],
+            reverse=True,
+        )[:10]
+
+        return {
+            "total_income": total_income,
+            "total_expense": total_expense,
+            "net_balance": total_income - total_expense,
+            "transaction_count": len(transactions),
+            "top_categories": top_categories,
+            "largest_transactions": largest_transactions,
+            "detected_income": total_income,
+            "declared_income": None,
+            "income_basis": "detected" if total_income > 0 else "none",
+        }

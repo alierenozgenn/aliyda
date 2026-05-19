@@ -36,7 +36,7 @@ async def create_chat_session(
         session_id = chat_service.create_session(
             user_id=user_id,
             title=f"Sohbet — {month or 'Genel'}",
-            month_context=month,
+            month=month,
         )
         return success_response(data={"session_id": session_id})
     except Exception as e:
@@ -62,7 +62,7 @@ async def get_session_messages(
     chat_service: ChatService = Depends(get_chat_service),
 ):
     try:
-        messages = chat_service.get_session_messages(session_id)
+        messages = chat_service.get_session_messages(user_id=user_id, session_id=session_id)
         return success_response(data=messages)
     except Exception as e:
         return error_response(code="MESSAGES_FETCH_ERROR", message=str(e))
@@ -85,8 +85,10 @@ async def send_chat_message(
             session_id = chat_service.create_session(
                 user_id=user_id,
                 title="Sohbet",
-                month_context=data.month,
+                month=data.month,
             )
+        elif not chat_service.get_session(user_id=user_id, session_id=session_id):
+            return error_response(code="SESSION_NOT_FOUND", message="Sohbet oturumu bulunamadı.")
 
         # 2. Build SMART context from DB — only relevant fields for this question
         if data.month:
@@ -100,20 +102,25 @@ async def send_chat_message(
 
         # 3. Save user message with context snapshot for debugging
         chat_service.add_message(
+            user_id=user_id,
             session_id=session_id,
             role="user",
             content=data.message,
             context_snapshot=context,
         )
 
-        # 4. Gemini answers based ONLY on verified DB context
-        answer = gemini.answer_chat_question(
-            question=data.message,
-            context=context,
-        )
+        # 4. If there is no verified DB data, do not ask Gemini to improvise.
+        if data.month and not context.get("has_verified_data", False):
+            answer = "Bu ay için doğrulanmış işlem bulunmuyor. PDF yükleyip işlemleri onayladıktan sonra yorum yapabilirim."
+        else:
+            answer = gemini.answer_chat_question(
+                question=data.message,
+                context=context,
+            )
 
         # 5. Save assistant response
         assistant_msg = chat_service.add_message(
+            user_id=user_id,
             session_id=session_id,
             role="assistant",
             content=answer,

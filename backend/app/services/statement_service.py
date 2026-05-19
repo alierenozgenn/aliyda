@@ -24,11 +24,11 @@ class StatementService:
         )
         return response.data[0]["id"]
 
-    def update_statement_status(self, statement_id: str, status: str, error_message: str = None) -> bool:
+    def update_statement_status(self, user_id: str, statement_id: str, status: str, error_message: str = None) -> bool:
         update = {"status": status}
         if error_message:
             update["error_message"] = error_message[:500]
-        self.db.table("statements").update(update).eq("id", statement_id).execute()
+        self.db.table("statements").update(update).eq("id", statement_id).eq("user_id", user_id).execute()
         return True
 
     def list_statements_by_month(self, user_id: str, month: str) -> List[Dict[str, Any]]:
@@ -41,7 +41,19 @@ class StatementService:
             .order("created_at", desc=True)
             .execute()
         )
-        return response.data
+        statements = response.data or []
+        for statement in statements:
+            draft_response = (
+                self.db.table("transaction_drafts")
+                .select("id, review_status")
+                .eq("user_id", user_id)
+                .eq("statement_id", statement["id"])
+                .execute()
+            )
+            drafts = draft_response.data or []
+            statement["total_draft_count"] = len(drafts)
+            statement["pending_draft_count"] = len([d for d in drafts if d.get("review_status") == "pending"])
+        return statements
 
     def get_statement(self, statement_id: str) -> Dict[str, Any]:
         response = self.db.table("statements").select("*").eq("id", statement_id).single().execute()

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { getStatements, getDrafts, approveDraft, rejectDraft, finalizeStatement } from '../services/api'
 import {
-  CheckCircle, XCircle, Clock, FileText, Pencil, X,
+  CheckCircle, XCircle, FileText, Pencil, X,
   AlertTriangle, ChevronDown, ChevronUp, Shield
 } from 'lucide-react'
 
@@ -199,12 +199,24 @@ export default function VerificationCenter() {
   const [expandedStmt, setExpandedStmt] = useState(null)
   const [drafts, setDrafts] = useState([])
   const [editDraft, setEditDraft] = useState(null)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState('')
-  const [approving, setApproving] = useState(null) // draft id being approved
+
+  async function loadDrafts(stmt) {
+    setExpandedStmt(stmt.id)
+    try {
+      const res = await getDrafts(stmt.id)
+      setDrafts(res.data || [])
+      if ((res.data || []).length === 0 && stmt.status === 'pending_review' && (stmt.total_draft_count || 0) === 0) {
+        setMessage('⚠ İşlem taslağı oluşmamış; backend loglarını ve Supabase RPC hatalarını kontrol edin.')
+      }
+    } catch (err) {
+      setMessage(`❌ Taslaklar yüklenemedi: ${err.response?.data?.error?.message || 'Bilinmeyen hata'}`)
+      setDrafts([])
+    }
+  }
 
   const loadStatements = () => {
-    setLoading(true)
     getStatements(month)
       .then(res => {
         const list = res.data || []
@@ -218,32 +230,24 @@ export default function VerificationCenter() {
   }
 
   useEffect(() => {
-    setExpandedStmt(null)
-    setDrafts([])
-    setMessage('')
     loadStatements()
   }, [month])
 
-  const loadDrafts = async (stmt) => {
-    setExpandedStmt(stmt.id)
-    try {
-      const res = await getDrafts(stmt.id)
-      setDrafts(res.data || [])
-    } catch {
-      setDrafts([])
-    }
+  const handleMonthChange = (nextMonth) => {
+    setLoading(true)
+    setExpandedStmt(null)
+    setDrafts([])
+    setMessage('')
+    setMonth(nextMonth)
   }
 
   const handleApprove = async (draftId, updates = null) => {
-    setApproving(draftId)
     try {
       await approveDraft(draftId, updates)
       setDrafts(prev => prev.filter(d => d.id !== draftId))
       setMessage('')
     } catch (err) {
       setMessage(`❌ Onay hatası: ${err.response?.data?.error?.message || 'Bilinmeyen hata'}`)
-    } finally {
-      setApproving(null)
     }
   }
 
@@ -292,7 +296,6 @@ export default function VerificationCenter() {
     }
   }
 
-  const pendingStatements = statements.filter(s => s.status === 'pending_review')
   const lowConfidenceCount = drafts.filter(d => d.confidence_score && d.confidence_score < 0.7).length
 
   return (
@@ -319,7 +322,7 @@ export default function VerificationCenter() {
         </div>
         <select
           value={month}
-          onChange={e => setMonth(e.target.value)}
+          onChange={e => handleMonthChange(e.target.value)}
           className="bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-4 py-2 focus:outline-none focus:border-violet-500"
         >
           {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
@@ -395,6 +398,11 @@ export default function VerificationCenter() {
                       <p className="text-gray-500 text-xs mt-0.5">
                         {stmt.month} · <span className={status.color}>{status.label}</span>
                       </p>
+                      {stmt.status === 'failed' && stmt.error_message && (
+                        <p className="text-red-400 text-xs mt-1 max-w-xl truncate">
+                          {stmt.error_message}
+                        </p>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -444,11 +452,19 @@ export default function VerificationCenter() {
                     {/* Draft list */}
                     {drafts.length === 0 ? (
                       <div className="text-center py-6">
-                        <p className="text-emerald-400 text-sm font-medium mb-2">✅ Tüm işlemler tamamlandı!</p>
-                        <button onClick={() => handleFinalize(stmt.id)}
-                          className="text-sm font-medium px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white transition-colors">
-                          PDF'i Tamamla ve Dashboard'a Yansıt
-                        </button>
+                        {(stmt.total_draft_count || 0) === 0 ? (
+                          <p className="text-amber-400 text-sm font-medium mb-2">
+                            İşlem taslağı oluşmamış; backend loglarını ve Supabase RPC hatalarını kontrol edin.
+                          </p>
+                        ) : (
+                          <>
+                            <p className="text-emerald-400 text-sm font-medium mb-2">✅ Tüm işlemler tamamlandı!</p>
+                            <button onClick={() => handleFinalize(stmt.id)}
+                              className="text-sm font-medium px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white transition-colors">
+                              PDF'i Tamamla ve Dashboard'a Yansıt
+                            </button>
+                          </>
+                        )}
                       </div>
                     ) : (
                       <div className="space-y-2">
