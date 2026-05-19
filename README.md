@@ -7,7 +7,7 @@ Bu proje **BTK Akademi Hackathon 2026** için **Ali Eren Özgen** ve **İlayda A
 ## Canlı Demo
 
 ```text
-[https://your-netlify-link.netlify.app](https://aliydaa.netlify.app/)
+https://aliydaa.netlify.app/
 ```
 
 ## Projenin Amacı
