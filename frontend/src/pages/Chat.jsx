@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
+import { Link } from 'react-router-dom'
 import { createChatSession, sendChatMessage } from '../services/api'
-import { Send, Sparkles, Bot, User, RefreshCw } from 'lucide-react'
+import { Send, Sparkles, Bot, User, RefreshCw, FileUp, ShieldCheck, ListChecks } from 'lucide-react'
 
 // ──────────────────────────────────────────────
 // Constants
@@ -116,9 +117,9 @@ export default function Chat() {
   }
 
   return (
-    <div className="flex flex-col h-screen">
+    <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800/50 glass shrink-0 z-10 relative">
+      <div className="flex items-center justify-between px-8 py-4 border-b border-gray-800/50 glass shrink-0 z-10 relative">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-xl bg-gradient-to-br from-violet-500/20 to-fuchsia-500/20 border border-violet-500/20 shadow-[0_0_15px_rgba(139,92,246,0.15)]">
             <Sparkles size={18} className="text-violet-400" />
@@ -149,7 +150,7 @@ export default function Chat() {
       </div>
 
       {/* Messages area */}
-      <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+      <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4 w-full max-w-6xl mx-auto">
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full pb-8">
             <div className="p-5 rounded-3xl glass-panel mb-5 animate-float shadow-[0_0_30px_rgba(139,92,246,0.15)]">
@@ -159,6 +160,29 @@ export default function Chat() {
             <p className="text-gray-400 text-sm mb-8 text-center max-w-sm leading-relaxed">
               {month} ayına ait doğrulanmış finansal verilerinize göre cevap veririm.
             </p>
+            <div className="grid grid-cols-3 gap-2 w-full max-w-xl mb-6">
+              <Link
+                to="/upload"
+                className="rounded-xl border border-white/5 bg-white/[0.03] hover:border-violet-500/30 px-3 py-3 text-center transition-colors"
+              >
+                <FileUp size={16} className="text-violet-300 mx-auto mb-1" />
+                <span className="text-[11px] text-gray-300 font-medium">PDF yükle</span>
+              </Link>
+              <Link
+                to="/verify"
+                className="rounded-xl border border-white/5 bg-white/[0.03] hover:border-violet-500/30 px-3 py-3 text-center transition-colors"
+              >
+                <ShieldCheck size={16} className="text-violet-300 mx-auto mb-1" />
+                <span className="text-[11px] text-gray-300 font-medium">Doğrula</span>
+              </Link>
+              <Link
+                to="/transactions"
+                className="rounded-xl border border-white/5 bg-white/[0.03] hover:border-violet-500/30 px-3 py-3 text-center transition-colors"
+              >
+                <ListChecks size={16} className="text-violet-300 mx-auto mb-1" />
+                <span className="text-[11px] text-gray-300 font-medium">İşlemleri gör</span>
+              </Link>
+            </div>
             <div className="grid grid-cols-1 gap-3 w-full max-w-sm">
               {SUGGESTIONS.map(s => (
                 <button
@@ -202,7 +226,7 @@ export default function Chat() {
       )}
 
       {/* Input */}
-      <div className="px-6 pb-6 pt-2 shrink-0 bg-transparent relative z-10">
+      <div className="w-full max-w-6xl mx-auto px-6 pb-6 pt-2 shrink-0 bg-transparent relative z-10">
         <div className="flex gap-3 glass-panel rounded-2xl p-2.5 shadow-lg focus-within:shadow-[0_0_20px_rgba(139,92,246,0.2)] focus-within:border-violet-500/50 transition-all duration-300">
           <input
             ref={inputRef}

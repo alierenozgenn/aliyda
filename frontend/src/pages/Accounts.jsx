@@ -82,7 +82,7 @@ export default function Accounts() {
   }
 
   return (
-    <div className="p-8 max-w-3xl">
+    <div className="w-full max-w-4xl mx-auto px-6 py-8 lg:px-8">
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>

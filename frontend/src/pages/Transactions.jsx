@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import {
   getTransactions,
   createManualTransaction,
@@ -10,8 +11,9 @@ import {
 import {
   Plus, Trash2, RotateCcw, Pencil, X, Check,
   TrendingUp, TrendingDown, ArrowLeftRight,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, FileUp, ShieldCheck,
 } from 'lucide-react'
+import WorkflowGuide from '../components/WorkflowGuide'
 
 // ──────────────────────────────────────────────
 // Constants
@@ -25,8 +27,15 @@ const CATEGORIES = [
 const DIRECTION_LABELS = {
   income: { label: 'Gelir', color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30', icon: TrendingUp },
   expense: { label: 'Gider', color: 'bg-red-500/20 text-red-400 border-red-500/30', icon: TrendingDown },
-  transfer: { label: 'Transfer', color: 'bg-blue-500/20 text-blue-400 border-blue-500/30', icon: ArrowLeftRight },
+  transfer_in: { label: 'Gelen Transfer', color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30', icon: TrendingUp },
+  transfer_out: { label: 'Giden Transfer', color: 'bg-red-500/20 text-red-400 border-red-500/30', icon: TrendingDown },
+  transfer: { label: 'Giden Transfer', color: 'bg-red-500/20 text-red-400 border-red-500/30', icon: ArrowLeftRight },
 }
+
+const isInflow = (direction) => direction === 'income' || direction === 'transfer_in'
+const isOutflow = (direction) => ['expense', 'transfer_out', 'transfer'].includes(direction)
+const amountPrefix = (direction) => (isInflow(direction) ? '+' : isOutflow(direction) ? '-' : '')
+const amountColor = (direction) => (isInflow(direction) ? 'text-emerald-400' : isOutflow(direction) ? 'text-red-400' : 'text-blue-400')
 
 function buildMonths() {
   const months = []
@@ -258,8 +267,8 @@ export default function Transactions() {
 
   // ── Stats ──────────────────────────────────
   const active = transactions.filter(t => !t.is_deleted)
-  const totalIncome = active.filter(t => t.direction === 'income').reduce((s, t) => s + Number(t.amount), 0)
-  const totalExpense = active.filter(t => t.direction === 'expense').reduce((s, t) => s + Number(t.amount), 0)
+  const totalIncome = active.filter(t => isInflow(t.direction)).reduce((s, t) => s + Number(t.amount), 0)
+  const totalExpense = active.filter(t => isOutflow(t.direction)).reduce((s, t) => s + Number(t.amount), 0)
   const netBalance = totalIncome - totalExpense
 
   // ── Filter ─────────────────────────────────
@@ -337,7 +346,7 @@ export default function Transactions() {
   const fmt = (n) => Number(n).toLocaleString('tr-TR', { minimumFractionDigits: 2 })
 
   return (
-    <div className="p-8 max-w-5xl">
+    <div className="w-full max-w-6xl mx-auto px-6 py-8 lg:px-8">
       {/* Modals */}
       {showAddModal && (
         <TransactionFormModal
@@ -393,6 +402,8 @@ export default function Transactions() {
         </div>
       </div>
 
+      <WorkflowGuide active="/transactions" compact />
+
       {/* Error */}
       {error && (
         <div className="mb-4 bg-red-500/20 border border-red-500/30 text-red-400 px-4 py-3 rounded-lg text-sm">
@@ -446,15 +457,35 @@ export default function Transactions() {
 
       {/* Empty */}
       {!loading && filtered.length === 0 && (
-        <div className="bg-gray-900 border border-dashed border-gray-700 rounded-xl p-12 text-center">
+        <div className="glass-panel border border-dashed border-gray-700 rounded-2xl p-12 text-center">
           <p className="text-gray-400">Bu ay için {filter === 'deleted' ? 'silinmiş' : 'onaylanmış'} işlem yok.</p>
+          <p className="text-gray-500 text-sm mt-1">
+            PDF’den gelen işlemler Doğrulama Merkezi’nde onaylandıktan sonra burada görünür.
+          </p>
           {filter === 'all' && (
-            <button
-              onClick={() => setShowAddModal(true)}
-              className="mt-3 text-sm text-violet-400 hover:text-violet-300 underline"
-            >
-              Manuel işlem ekle →
-            </button>
+            <div className="flex flex-wrap gap-2 justify-center mt-4">
+              <Link
+                to="/upload"
+                className="inline-flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              >
+                <FileUp size={14} />
+                PDF Yükle
+              </Link>
+              <Link
+                to="/verify"
+                className="inline-flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-gray-200 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              >
+                <ShieldCheck size={14} />
+                Doğrula
+              </Link>
+              <button
+                onClick={() => setShowAddModal(true)}
+                className="inline-flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-gray-200 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              >
+                <Plus size={14} />
+                Manuel İşlem Ekle
+              </button>
+            </div>
           )}
         </div>
       )}
@@ -495,11 +526,8 @@ export default function Transactions() {
                   <td className="px-5 py-3">
                     <DirectionBadge direction={tx.direction} />
                   </td>
-                  <td className={`px-5 py-3 text-right font-semibold ${
-                    tx.direction === 'income' ? 'text-emerald-400' :
-                    tx.direction === 'transfer' ? 'text-blue-400' : 'text-red-400'
-                  }`}>
-                    {tx.direction === 'income' ? '+' : tx.direction === 'expense' ? '-' : ''}₺{fmt(tx.amount)}
+                  <td className={`px-5 py-3 text-right font-semibold ${amountColor(tx.direction)}`}>
+                    {amountPrefix(tx.direction)}₺{fmt(tx.amount)}
                   </td>
                   <td className="px-5 py-3 text-right">
                     {tx.is_deleted ? (
@@ -539,8 +567,8 @@ export default function Transactions() {
             <span>{filtered.length} işlem</span>
             {filter !== 'deleted' && (
               <span>
-                {filtered.filter(t => t.direction === 'income').length} gelir ·{' '}
-                {filtered.filter(t => t.direction === 'expense').length} gider
+                {filtered.filter(t => isInflow(t.direction)).length} giriş ·{' '}
+                {filtered.filter(t => isOutflow(t.direction)).length} çıkış
               </span>
             )}
           </div>

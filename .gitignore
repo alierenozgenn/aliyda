@@ -5,6 +5,7 @@
 # Python
 venv/
 .venv/
+.modeltest/
 __pycache__/
 *.pyc
 .pytest_cache/

@@ -40,7 +40,7 @@ export default function Goals() {
   }
 
   return (
-    <div className="p-8 max-w-xl">
+    <div className="w-full max-w-3xl mx-auto px-6 py-8 lg:px-8">
       <h1 className="text-2xl font-bold text-white flex items-center gap-2 mb-2">
         <Target size={22} className="text-violet-400" />
         Aylık Hedefler

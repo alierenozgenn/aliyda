@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { getDashboard, generateInsight } from '../services/api'
+import { getDashboard } from '../services/api'
+import WorkflowGuide from '../components/WorkflowGuide'
 import {
-  TrendingUp, TrendingDown, Wallet, Sparkles,
-  RefreshCw, ArrowRight, AlertTriangle,
+  TrendingUp, TrendingDown, Wallet,
+  RefreshCw, ArrowRight, AlertTriangle, MessageSquare,
 } from 'lucide-react'
 
 // ──────────────────────────────────────────────
@@ -123,60 +125,59 @@ export default function Dashboard() {
   const { user } = useAuth()
   const [month, setMonth] = useState(MONTHS[0])
   const [dashboard, setDashboard] = useState(null)
-  const [insight, setInsight] = useState(null)
   const [loading, setLoading] = useState(false)
-  const [insightLoading, setInsightLoading] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
     setLoading(true)
     setError('')
     setDashboard(null)
-    setInsight(null)
     getDashboard(month)
-      .then(res => {
-        setDashboard(res.data)
-        // If dashboard includes a fresh insight, show it
-        if (res.data?.latest_insight) setInsight(res.data.latest_insight)
-      })
+      .then(res => setDashboard(res.data))
       .catch(() => setError('Dashboard yüklenemedi.'))
       .finally(() => setLoading(false))
   }, [month])
 
-  const handleGenerateInsight = async (force = false) => {
-    setInsightLoading(true)
-    try {
-      const res = await generateInsight(month, force)
-      setInsight(res.data)
-    } catch {
-      setInsight(null)
-    } finally {
-      setInsightLoading(false)
-    }
-  }
-
   const netBalance = dashboard ? Number(dashboard.net_balance ?? 0) : 0
   const isNegative = netBalance < 0
+  const incomeSourceLabel = dashboard?.income_basis === 'manual'
+    ? 'manuel gelir'
+    : dashboard?.income_basis === 'mixed'
+      ? 'manuel + işlem girişi'
+      : 'işlem girişi'
 
   return (
-    <div className="p-8 max-w-5xl">
+    <div className="w-full max-w-6xl mx-auto px-6 py-8 lg:px-8">
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Dashboard</h1>
-          <p className="text-gray-400 text-sm mt-1">
-            {user?.email && <span className="text-gray-500">{user.email} · </span>}
-            Doğrulanmış verilerinizin özeti
-          </p>
+      <div className="glass-panel rounded-3xl px-6 py-5 mb-6 relative overflow-hidden">
+        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-violet-400/60 to-transparent" />
+        <div className="flex items-center justify-between gap-4 relative z-10">
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-[11px] text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                Doğrulanmış kullanıcı verisi
+              </span>
+            </div>
+            <h1 className="text-3xl font-bold text-white tracking-tight">Finansal Kontrol Merkezi</h1>
+            <p className="text-gray-400 text-sm mt-2">
+              {user?.email && <span className="text-gray-500">{user.email} · </span>}
+              Gelir, gider ve chatbot yorumları yalnızca onaylanan işlemlerden hesaplanır.
+            </p>
+          </div>
+          <div className="flex flex-col items-end gap-2">
+            <span className="text-gray-500 text-xs">Analiz ayı</span>
+            <select
+              value={month}
+              onChange={e => setMonth(e.target.value)}
+              className="bg-gray-800/80 border border-gray-700 text-white text-sm rounded-xl px-4 py-2 focus:outline-none focus:border-violet-500 shadow-lg"
+            >
+              {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
         </div>
-        <select
-          value={month}
-          onChange={e => setMonth(e.target.value)}
-          className="bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-4 py-2 focus:outline-none focus:border-violet-500"
-        >
-          {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
-        </select>
       </div>
+
+      <WorkflowGuide active="/" />
 
       {loading && (
         <div className="flex items-center gap-2 text-gray-400 text-sm">
@@ -191,17 +192,17 @@ export default function Dashboard() {
       )}
 
       {!loading && !dashboard && !error && (
-        <div className="bg-gray-900 border border-dashed border-gray-700 rounded-xl p-12 text-center">
-          <Wallet size={36} className="text-gray-600 mx-auto mb-3" />
+        <div className="glass-panel border border-dashed border-gray-700 rounded-2xl p-12 text-center">
+          <Wallet size={36} className="text-gray-500 mx-auto mb-3" />
           <p className="text-gray-400 font-medium">Bu ay için henüz veri yok.</p>
-          <p className="text-gray-500 text-sm mt-1">Manuel işlem ekleyin veya PDF yükleyin.</p>
+          <p className="text-gray-500 text-sm mt-1">Önce PDF yükleyin veya manuel işlem ekleyin; PDF işlemleri doğrulamadan dashboard’a yansımaz.</p>
           <div className="flex gap-3 justify-center mt-4">
-            <a href="/transactions" className="text-sm text-violet-400 hover:text-violet-300 flex items-center gap-1">
-              İşlem Ekle <ArrowRight size={14} />
-            </a>
-            <a href="/upload" className="text-sm text-violet-400 hover:text-violet-300 flex items-center gap-1">
+            <Link to="/upload" className="inline-flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
               PDF Yükle <ArrowRight size={14} />
-            </a>
+            </Link>
+            <Link to="/transactions" className="inline-flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-gray-200 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+              İşlem Ekle <ArrowRight size={14} />
+            </Link>
           </div>
         </div>
       )}
@@ -224,7 +225,7 @@ export default function Dashboard() {
               icon={TrendingUp}
               iconBg="bg-emerald-500/20 text-emerald-400"
               textColor="text-emerald-400"
-              subtitle={`${dashboard.transaction_count ?? '—'} işlem`}
+              subtitle={`${incomeSourceLabel} · ${dashboard.income_count ?? '—'} giriş`}
             />
             <StatCard
               title="Toplam Gider"
@@ -232,6 +233,7 @@ export default function Dashboard() {
               icon={TrendingDown}
               iconBg="bg-red-500/20 text-red-400"
               textColor="text-red-400"
+              subtitle={`${dashboard.expense_count ?? '—'} çıkış`}
             />
             <StatCard
               title="Net Bakiye"
@@ -239,7 +241,24 @@ export default function Dashboard() {
               icon={Wallet}
               iconBg="bg-violet-500/20 text-violet-400"
               textColor={isNegative ? 'text-red-400' : 'text-violet-400'}
+              subtitle="Gelir - gider"
             />
+          </div>
+
+          <div className="mb-6 rounded-2xl border border-violet-500/20 bg-violet-500/10 px-5 py-4 flex items-center justify-between gap-4">
+            <div>
+              <p className="text-white text-sm font-semibold">Detaylı yorum istiyorsan chatbot’a sor.</p>
+              <p className="text-gray-400 text-xs mt-1">
+                “Faturaları tek tek göster”, “nereden tasarruf edebilirim” veya “en büyük harcamalarım neler” gibi sorular sorabilirsin.
+              </p>
+            </div>
+            <Link
+              to="/chat"
+              className="shrink-0 inline-flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+            >
+              <MessageSquare size={15} />
+              Chatbot’a Sor
+            </Link>
           </div>
 
           {/* Income vs Expense bar */}
@@ -285,31 +304,6 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* AI Insight */}
-          <div className="glass-panel rounded-2xl p-6 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-64 h-64 bg-violet-600/10 rounded-full blur-3xl -z-10 animate-pulse" />
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-fuchsia-400 text-sm font-bold tracking-wide uppercase flex items-center gap-2">
-                <Sparkles size={18} className="text-violet-400" />
-                AI Finansal Analiz
-              </h2>
-              <button
-                onClick={() => handleGenerateInsight(!!insight)}
-                disabled={insightLoading}
-                className="flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-lg bg-violet-600/20 text-violet-300 hover:bg-violet-600/40 hover:text-white disabled:opacity-50 transition-all"
-              >
-                <RefreshCw size={14} className={insightLoading ? 'animate-spin' : ''} />
-                {insightLoading ? 'Üretiliyor...' : insight ? 'Yenile' : 'Yorum Üret'}
-              </button>
-            </div>
-            {insight ? (
-              <p className="text-gray-200 text-[15px] leading-relaxed relative z-10 font-medium">{insight.insight_text}</p>
-            ) : (
-              <p className="text-gray-500 text-sm relative z-10">
-                "Yorum Üret" butonuna tıklayarak bu aya özel AI analizini başlatın.
-              </p>
-            )}
-          </div>
         </>
       )}
     </div>

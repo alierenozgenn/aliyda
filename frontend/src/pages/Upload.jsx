@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { getStatements, uploadStatement, getDrafts, approveDraft, rejectDraft, getAccounts, createAccount, finalizeStatement } from '../services/api'
-import { Upload, CheckCircle, XCircle, Clock, Plus, X, AlertTriangle, ArrowRight } from 'lucide-react'
+import WorkflowGuide from '../components/WorkflowGuide'
+import { Upload, CheckCircle, XCircle, Clock, Plus, X, AlertTriangle, ArrowRight, ShieldCheck } from 'lucide-react'
 
 function buildMonths() {
   const months = []
@@ -28,6 +30,16 @@ const STATUS_COLORS = {
   failed: 'text-red-400',
   extracting: 'text-blue-400',
   uploaded: 'text-gray-400',
+}
+
+const STATUS_LABELS = {
+  pending_review: 'Onay bekliyor',
+  approved: 'Onaylandı',
+  failed: 'Başarısız',
+  extracting: 'İşleniyor',
+  uploaded: 'Yüklendi',
+  extracted: 'Çıkarıldı',
+  saved: 'Kaydedildi',
 }
 
 function CreateAccountModal({ onClose, onCreated }) {
@@ -240,7 +252,7 @@ export default function UploadPage() {
   }
 
   return (
-    <div className="p-8">
+    <div className="w-full max-w-6xl mx-auto px-6 py-8 lg:px-8">
       {showCreateAccount && (
         <CreateAccountModal
           onClose={() => setShowCreateAccount(false)}
@@ -251,10 +263,17 @@ export default function UploadPage() {
         />
       )}
 
-      <h1 className="text-2xl font-bold text-white mb-6">PDF Yükle</h1>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-white">PDF Yükle</h1>
+        <p className="text-gray-400 text-sm mt-1">
+          Ekstrenizi yükleyin; işlemler önce taslak olarak çıkarılır, doğruladıktan sonra dashboard ve chatbot’a yansır.
+        </p>
+      </div>
+
+      <WorkflowGuide active="/upload" compact />
 
       {/* Upload Form */}
-      <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-8">
+      <div className="glass-panel rounded-2xl p-6 mb-8">
         <form onSubmit={handleUpload} className="space-y-4">
           <div className="flex gap-4">
             <div className="flex-1">
@@ -302,7 +321,35 @@ export default function UploadPage() {
             />
           </div>
 
-          {message && <p className="text-sm text-gray-300">{message}</p>}
+          {message && (
+            <div className={`rounded-xl border px-4 py-3 text-sm ${
+              message.startsWith('✅')
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                : message.startsWith('❌')
+                  ? 'bg-red-500/10 border-red-500/30 text-red-300'
+                  : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+            }`}>
+              <p>{message}</p>
+              {message.startsWith('✅') && (
+                <div className="flex flex-wrap gap-2 mt-3">
+                  <Link
+                    to="/verify"
+                    className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
+                  >
+                    <ShieldCheck size={14} />
+                    İşlemleri Doğrula
+                  </Link>
+                  <Link
+                    to="/transactions"
+                    className="inline-flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-gray-200 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
+                  >
+                    Onaylanan İşlemler
+                    <ArrowRight size={14} />
+                  </Link>
+                </div>
+              )}
+            </div>
+          )}
 
           {incomeWarning && (
             <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 flex flex-col gap-2 mt-2">
@@ -315,12 +362,12 @@ export default function UploadPage() {
                 Finansal analizlerinizin ve bütçe planlamanızın doğru çalışması için lütfen 
                 <strong> Aylık Hedefler</strong> sayfasından bu ayki gelirinizi manuel bildirin.
               </p>
-              <a 
-                href="/goals"
+              <Link
+                to="/goals"
                 className="text-xs text-amber-400 hover:text-amber-300 font-medium flex items-center gap-1 mt-1 transition-colors self-start"
               >
                 Aylık Hedeflere Git <ArrowRight size={14} />
-              </a>
+              </Link>
             </div>
           )}
 
@@ -343,17 +390,31 @@ export default function UploadPage() {
 
       {/* Statement List */}
       {statements.length > 0 && (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-5 mb-6">
+        <div className="bg-gray-900/80 border border-gray-800 rounded-2xl p-5 mb-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-white font-semibold">Bu Aydaki PDF'ler</h2>
+            <div>
+              <h2 className="text-white font-semibold">Bu Aydaki PDF'ler</h2>
+              <p className="text-gray-500 text-xs mt-1">
+                Durumu “Onay Bekliyor” olan PDF’ler Doğrulama Merkezi’nde tek tek kontrol edilir.
+              </p>
+            </div>
             {statements.some(s => s.status === 'pending_review') && (
-              <button
-                onClick={handleFinalize}
-                disabled={finalizing}
-                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-4 py-1.5 rounded-lg text-xs font-medium transition-colors"
-              >
-                {finalizing ? 'Tamamlanıyor...' : '✅ Ayı Tamamla'}
-              </button>
+              <div className="flex items-center gap-2">
+                <Link
+                  to="/verify"
+                  className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white px-4 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                >
+                  Doğrulama Merkezi
+                  <ArrowRight size={14} />
+                </Link>
+                <button
+                  onClick={handleFinalize}
+                  disabled={finalizing}
+                  className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-4 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                >
+                  {finalizing ? 'Tamamlanıyor...' : 'Ayı Tamamla'}
+                </button>
+              </div>
             )}
           </div>
           <div className="space-y-2">
@@ -363,7 +424,7 @@ export default function UploadPage() {
                   <Clock size={14} className={STATUS_COLORS[stmt.status] || 'text-gray-400'} />
                   <span className="text-gray-300">{stmt.file_name || 'PDF'}</span>
                   <span className={`text-xs ${STATUS_COLORS[stmt.status] || 'text-gray-500'}`}>
-                    {stmt.status}
+                    {STATUS_LABELS[stmt.status] || stmt.status}
                   </span>
                   {stmt.status === 'failed' && stmt.error_message && (
                     <span className="text-xs text-red-400 max-w-lg truncate">

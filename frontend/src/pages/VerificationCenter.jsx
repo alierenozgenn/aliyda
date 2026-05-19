@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { getStatements, getDrafts, approveDraft, rejectDraft, finalizeStatement } from '../services/api'
+import WorkflowGuide from '../components/WorkflowGuide'
 import {
   CheckCircle, XCircle, FileText, Pencil, X,
-  AlertTriangle, ChevronDown, ChevronUp, Shield
+  AlertTriangle, ChevronDown, ChevronUp, Shield, ArrowRight, ListChecks, MessageSquare
 } from 'lucide-react'
 
 // ──────────────────────────────────────────────
@@ -299,7 +301,7 @@ export default function VerificationCenter() {
   const lowConfidenceCount = drafts.filter(d => d.confidence_score && d.confidence_score < 0.7).length
 
   return (
-    <div className="p-8 max-w-5xl">
+    <div className="w-full max-w-6xl mx-auto px-6 py-8 lg:px-8">
       {/* Edit Modal */}
       {editDraft && (
         <EditDraftModal
@@ -328,6 +330,8 @@ export default function VerificationCenter() {
           {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
         </select>
       </div>
+
+      <WorkflowGuide active="/verify" compact />
 
       {/* Info Banner */}
       <div className="mb-6 glass-panel rounded-xl px-5 py-4">
@@ -362,15 +366,18 @@ export default function VerificationCenter() {
 
       {/* No statements */}
       {!loading && statements.length === 0 && (
-        <div className="bg-gray-900 border border-dashed border-gray-700 rounded-xl p-12 text-center">
+        <div className="glass-panel border border-dashed border-gray-700 rounded-2xl p-12 text-center">
           <FileText size={36} className="text-gray-600 mx-auto mb-3" />
           <p className="text-gray-400 font-medium">Bu ay için yüklenmiş PDF yok.</p>
           <p className="text-gray-500 text-sm mt-1">
-            PDF Yükle sayfasından banka ekstrenizi yükleyin.
+            Önce PDF Yükle ekranından banka ekstrenizi yükleyin; işlem taslakları burada görünecek.
           </p>
-          <a href="/upload" className="inline-block mt-4 text-sm text-violet-400 hover:text-violet-300">
-            PDF Yükle →
-          </a>
+          <Link
+            to="/upload"
+            className="inline-flex items-center gap-2 mt-4 bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+          >
+            PDF Yükle <ArrowRight size={14} />
+          </Link>
         </div>
       )}
 
@@ -463,6 +470,23 @@ export default function VerificationCenter() {
                               className="text-sm font-medium px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white transition-colors">
                               PDF'i Tamamla ve Dashboard'a Yansıt
                             </button>
+                            <div className="flex items-center justify-center gap-2 mt-3">
+                              <Link
+                                to="/transactions"
+                                className="inline-flex items-center gap-1 text-xs text-gray-300 hover:text-white"
+                              >
+                                <ListChecks size={13} />
+                                Onaylanan işlemleri gör
+                              </Link>
+                              <span className="text-gray-700">·</span>
+                              <Link
+                                to="/chat"
+                                className="inline-flex items-center gap-1 text-xs text-gray-300 hover:text-white"
+                              >
+                                <MessageSquare size={13} />
+                                Chatbot’a sor
+                              </Link>
+                            </div>
                           </>
                         )}
                       </div>

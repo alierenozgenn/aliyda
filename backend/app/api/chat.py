@@ -112,6 +112,8 @@ async def send_chat_message(
         # 4. If there is no verified DB data, do not ask Gemini to improvise.
         if data.month and not context.get("has_verified_data", False):
             answer = "Bu ay için doğrulanmış işlem bulunmuyor. PDF yükleyip işlemleri onayladıktan sonra yorum yapabilirim."
+        elif context.get("deterministic_answer"):
+            answer = context["deterministic_answer"]
         else:
             answer = gemini.answer_chat_question(
                 question=data.message,
